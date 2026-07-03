@@ -2,8 +2,6 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../../../../config/api_cli.config.ts';
 import ProductForm from '../../components/product/ProductForm.tsx';
 import LoadingState from '../../../../components/shared/LoadingState.tsx';
 import { useProduct, useUpdateProduct } from '../../hooks/useProducts.ts';
@@ -68,7 +66,7 @@ const EditProductPage: React.FC = () => {
 
       <Card>
         <ProductForm
-          product={productData.product}
+          product={productData.data.product}
           onSubmit={handleSubmit}
           onCancel={handleCancel}
           isLoading={updateProductMutation.isLoading}

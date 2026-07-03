@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader } from 'lucide-react';
+import authService from '../services/auth-service';
 
 const OAuthCallbackPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -16,7 +17,14 @@ const OAuthCallbackPage: React.FC = () => {
       if (token) {
         // Store token in localStorage
         localStorage.setItem('token', token);
-        
+
+        // Load user data before redirecting so auth context is populated
+        try {
+          await authService.getCurrentUser();
+        } catch {
+          // non-fatal — context will retry on mount
+        }
+
         // Redirect to home page
         navigate('/shop');
       } else {

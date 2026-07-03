@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Remove-Job -Force -Confirm:$false)",
+      "PowerShell(Get-Process -Name node -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force -Confirm:$false)",
+      "PowerShell(Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"e:\\\\kitchen_e\\\\be\" -RedirectStandardOutput \"C:\\\\Temp\\\\be.log\" -RedirectStandardError \"C:\\\\Temp\\\\be-err.log\" -WindowStyle Hidden -PassThru)",
+      "PowerShell(Start-Process -FilePath \"python\" -ArgumentList \"run.py\",\"--port\",\"8000\" -WorkingDirectory \"e:\\\\kitchen_e\\\\py-ai\" -RedirectStandardOutput \"C:\\\\Temp\\\\py.log\" -RedirectStandardError \"C:\\\\Temp\\\\py-err.log\" -WindowStyle Hidden -PassThru)",
+      "PowerShell(Get-Process -Id 13388, 18772 -ErrorAction SilentlyContinue)",
+      "Read(//c/Temp/**)",
+      "PowerShell(Get-Process -Name node, python -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Content \"C:\\\\Temp\\\\py.log\" | Where-Object { $_ -match \"ERROR|chat\" } | Select-Object -Last 10)",
+      "PowerShell(Get-Content \"C:\\\\Temp\\\\be.log\" | Where-Object { $_ -match \"ai/chat|Unknown|Error\" } | Select-Object -Last 5)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/health\" -Method GET)",
+      "Bash(python3 gen_notebooks.py)",
+      "Bash(find fe/src/features/products/hooks -type f)",
+      "Bash(find fe/src/features/products/interface -type f)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.jest,null,2\\)\\)\")",
+      "Bash(npx jest *)",
+      "Bash(node --check controllers/cart.controller.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/api/products)",
+      "Bash(curl -s \"http://localhost:5000/api/products/6a3de4ff69cdbe5d971d9ef3\")",
+      "Bash(curl -s \"http://localhost:5000/api/products/6a3de4ff69cdbe5d971d9ef3/customizations\")",
+      "Bash(curl -s \"http://localhost:5000/api/products/6a3de4ff69cdbe5d971d9ef3/variants\")"
+    ]
+  }
+}

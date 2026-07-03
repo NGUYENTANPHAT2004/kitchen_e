@@ -625,7 +625,7 @@ exports.getUserOrdersSummary = asyncHandler(async (req, res) => {
   // Count orders by status
   const Order = require('../models/Order');
   const orderCounts = await Order.aggregate([
-    { $match: { userId: mongoose.Types.ObjectId(id), isDeleted: false } },
+    { $match: { userId: new mongoose.Types.ObjectId(id), isDeleted: false } },
     { $group: { _id: '$status', count: { $sum: 1 } } }
   ]);
 
@@ -656,7 +656,7 @@ exports.getUserOrdersSummary = asyncHandler(async (req, res) => {
   const totalSpent = await Order.aggregate([
     { 
       $match: { 
-        userId: mongoose.Types.ObjectId(id), 
+        userId: new mongoose.Types.ObjectId(id), 
         status: { $in: ['delivered', 'shipped'] },
         isPaid: true
       } 

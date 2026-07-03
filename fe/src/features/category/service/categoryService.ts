@@ -28,7 +28,7 @@ export const categoryService = {
 
   async getCategory(id: string) {
     const response = await api.get(endpoints.categories.byId(id));
-    return response.data?.data || response.data;
+    return response.data?.data?.category ?? response.data?.data ?? response.data;
   },
 
   async createCategory(formData: FormData) {

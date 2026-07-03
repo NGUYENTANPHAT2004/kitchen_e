@@ -1,6 +1,14 @@
-import cv2
-import dlib
-import numpy as np
+from __future__ import annotations
+try:
+    import cv2
+    import dlib
+    import numpy as np
+    _CV_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    dlib = None
+    np = None
+    _CV_AVAILABLE = False
 import os
 import logging
 from app.config import settings

@@ -1,5 +1,6 @@
 // models/FlashSale.js
 const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
 const FlashSaleSchema = new mongoose.Schema(
   {
@@ -86,4 +87,5 @@ FlashSaleSchema.pre('save', function(next) {
   next();
 });
 
+FlashSaleSchema.plugin(mongoosePaginate);
 module.exports = mongoose.model('FlashSale', FlashSaleSchema);

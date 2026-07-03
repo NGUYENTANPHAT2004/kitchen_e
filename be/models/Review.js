@@ -1,5 +1,6 @@
 // models/Review.js
 const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
 const ReviewSchema = new mongoose.Schema(
   {
@@ -267,5 +268,7 @@ ReviewSchema.index({ userId: 1, createdAt: -1 });
 ReviewSchema.index({ orderId: 1 });
 ReviewSchema.index({ rating: 1 });
 ReviewSchema.index({ isApproved: 1, isRejected: 1 });
+
+ReviewSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('Review', ReviewSchema);

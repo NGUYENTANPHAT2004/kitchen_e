@@ -1,68 +1,6 @@
-import { api, endpoints, uploadUtils } from '../../../config/api_cli.config';
+import { api, endpoints } from '../../../config/api_cli.config';
+import type { ProductFilters, ProductFormData } from '../interface/productCustomization';
 
-export interface Product {
-  _id: string;
-  name: string;
-  slug: string;
-  description: string;
-  categoryId: {
-    _id: string;
-    name: string;
-    slug: string;
-  };
-  basePrice: number;
-  images: Array<{
-    url: string;
-    path: string;
-    altText: string;
-    isDefault: boolean;
-  }>;
-  sku: string;
-  stockQuantity: number;
-  isCustomizable: boolean;
-  featured: boolean;
-  tags: string[];
-  weight?: number;
-  dimensions?: {
-    length: number;
-    width: number;
-    height: number;
-    unit: string;
-  };
-  isDeleted: boolean;
-  createdAt: string;
-  updatedAt: string;
-  averageRating?: number;
-  popularity?: number;
-}
-
-export interface ProductFilters {
-  page?: number;
-  limit?: number;
-  search?: string;
-  category?: string;
-  minPrice?: number;
-  maxPrice?: number;
-  inStock?: boolean;
-  featured?: boolean;
-  sort?: string;
-}
-
-export interface ProductFormData {
-  name: string;
-  description: string;
-  categoryId: string;
-  basePrice: number;
-  sku: string;
-  stockQuantity: number;
-  isCustomizable: boolean;
-  featured: boolean;
-  tags: string[];
-  weight?: number;
-  dimensions?: string;
-  images?: File[];
-  removeImages?: string[];
-}
 
 export const productService = {
   // Get products with filters and pagination
@@ -172,6 +110,21 @@ export const productService = {
   async getFeaturedProducts(limit: number = 8) {
     const response = await api.get(`${endpoints.products.featured}?limit=${limit}`);
     return response.data;
+  },
+
+  // Get best-selling products (sorted by popularity + rating on the backend)
+  async getBestSellingProducts(limit: number = 15) {
+    const response = await api.get(`${endpoints.products.bestSelling}?limit=${limit}`);
+    const data = response.data?.data ?? response.data;
+    return (data?.products ?? []) as Array<{
+      _id: string;
+      name: string;
+      slug?: string;
+      images?: string[];
+      basePrice?: number;
+      averageRating?: number;
+      popularity?: number;
+    }>;
   }
 };
 

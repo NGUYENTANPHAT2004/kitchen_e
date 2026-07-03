@@ -1,7 +1,15 @@
+from __future__ import annotations
 import logging
-import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModel
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModel
+    _TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    AutoTokenizer = None
+    AutoModel = None
+    _TORCH_AVAILABLE = False
 import os
 import json
 import re
@@ -16,6 +24,14 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# underthesea is an optional Vietnamese NLP toolkit that provides a pretrained
+# NER model. Imported lazily so the module still works (with the dictionary /
+# regex fallback) in environments where it isn't installed.
+try:
+    from underthesea import ner as _uts_ner
+except Exception:  # pragma: no cover - depends on optional dependency
+    _uts_ner = None
+
 class ChatModel:
     _instance = None
     
@@ -23,35 +39,38 @@ class ChatModel:
         if cls._instance is None:
             cls._instance = super(ChatModel, cls).__new__(cls)
             cls._instance.initialized = False
-            cls._instance.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            cls._instance.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if _TORCH_AVAILABLE else 'cpu'
         return cls._instance
     
     async def initialize(self):
         """Initialize the chat model"""
         if self.initialized:
             return
-            
+
         try:
-            # Load PhoBERT for Vietnamese
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                settings.PHOBERT_MODEL_PATH,
-                use_auth_token=settings.HUGGINGFACE_API_KEY
-            )
-            
-            self.model = AutoModel.from_pretrained(
-                settings.PHOBERT_MODEL_PATH,
-                use_auth_token=settings.HUGGINGFACE_API_KEY
-            ).to(self.device)
-            
+            if _TORCH_AVAILABLE and AutoTokenizer is not None:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    settings.PHOBERT_MODEL_PATH,
+                    use_auth_token=settings.HUGGINGFACE_API_KEY
+                )
+                self.model = AutoModel.from_pretrained(
+                    settings.PHOBERT_MODEL_PATH,
+                    use_auth_token=settings.HUGGINGFACE_API_KEY
+                ).to(self.device)
+            else:
+                self.tokenizer = None
+                self.model = None
+                logger.warning("torch/transformers not available — using rule-based fallback only")
+
             # Load intent patterns
             self.intent_patterns = await self._load_intent_patterns()
-            
+
             # Load product catalog for quick reference
             self.product_catalog = await self._load_product_catalog()
-            
+
             # Load common responses
             self.responses = await self._load_responses()
-            
+
             self.initialized = True
             logger.info("Chat model initialized successfully")
         except Exception as e:
@@ -177,6 +196,116 @@ class ChatModel:
         
         # Default to general if no match found
         return "general"
+
+    async def extract_entities(self, text: str) -> Dict[str, Any]:
+        """
+        Extract named entities from a user message.
+
+        Combines three sources, in order of precedence:
+          1. underthesea's pretrained NER (PERSON / LOCATION / ORG) when the
+             optional dependency is available;
+          2. a domain dictionary of kitchenware product types / materials;
+          3. regex extraction of quantities and prices.
+
+        Returns a dict with keys: ``products``, ``materials``, ``quantities``,
+        ``prices``, ``ner`` (raw NER spans).  Empty lists when nothing matched.
+        """
+        await self.initialize()
+
+        normalized = text.lower().strip()
+
+        entities: Dict[str, Any] = {
+            "products": [],
+            "materials": [],
+            "quantities": [],
+            "prices": [],
+            "ner": [],
+        }
+
+        # 1. Domain dictionary — product types relevant to a kitchenware store.
+        product_terms = [
+            "nồi", "chảo", "dao", "thớt", "máy xay", "lò", "ấm", "bát", "đĩa",
+            "muỗng", "đũa", "khuôn", "máy ép", "nồi cơm", "nồi chiên",
+        ]
+        for term in product_terms:
+            if term in normalized:
+                entities["products"].append(term)
+
+        material_terms = [
+            "inox", "gang", "nhôm", "thủy tinh", "sứ", "gỗ", "nhựa", "thép",
+            "chống dính", "men", "đồng",
+        ]
+        for term in material_terms:
+            if term in normalized:
+                entities["materials"].append(term)
+
+        # 2. Regex — quantities ("2 cái", "3 chiếc") and prices.
+        quantity_pattern = r"(\d+)\s*(cái|chiếc|bộ|chiếu|cặp|đôi|chục)"
+        for match in re.finditer(quantity_pattern, normalized):
+            entities["quantities"].append(
+                {"value": int(match.group(1)), "unit": match.group(2)}
+            )
+
+        # Prices: "200k", "200 nghìn", "1 triệu", "150000 vnd", "150.000đ"
+        price_pattern = (
+            r"(\d[\d.,]*)\s*(triệu|tr|nghìn|ngàn|k|đồng|đ|vnd|vnđ)"
+        )
+        for match in re.finditer(price_pattern, normalized):
+            raw = match.group(1).replace(".", "").replace(",", "")
+            try:
+                amount = float(raw)
+            except ValueError:
+                continue
+            unit = match.group(2)
+            multiplier = {
+                "triệu": 1_000_000, "tr": 1_000_000,
+                "nghìn": 1_000, "ngàn": 1_000, "k": 1_000,
+            }.get(unit, 1)
+            entities["prices"].append(
+                {"amount": amount * multiplier, "raw": match.group(0).strip()}
+            )
+
+        # 3. underthesea NER (optional) — adds PERSON/LOC/ORG spans.
+        if _uts_ner is not None:
+            try:
+                # ner() returns tuples like (word, pos, chunk, ner_tag).
+                tagged = _uts_ner(text)
+                current_entity = []
+                current_label = None
+                for token in tagged:
+                    word, ner_tag = token[0], token[-1]
+                    if ner_tag.startswith("B-"):
+                        if current_entity:
+                            entities["ner"].append({
+                                "text": " ".join(current_entity),
+                                "label": current_label,
+                            })
+                        current_entity = [word]
+                        current_label = ner_tag[2:]
+                    elif ner_tag.startswith("I-") and current_entity:
+                        current_entity.append(word)
+                    else:
+                        if current_entity:
+                            entities["ner"].append({
+                                "text": " ".join(current_entity),
+                                "label": current_label,
+                            })
+                            current_entity = []
+                            current_label = None
+                if current_entity:
+                    entities["ner"].append({
+                        "text": " ".join(current_entity),
+                        "label": current_label,
+                    })
+            except Exception as e:
+                logger.warning(f"NER extraction failed, continuing without it: {str(e)}")
+
+        # De-duplicate the simple list fields while preserving order.
+        entities["products"] = list(dict.fromkeys(entities["products"]))
+        entities["materials"] = list(dict.fromkeys(entities["materials"]))
+
+        return entities
+
     
     async def encode_text(self, text: str) -> np.ndarray:
         """Encode text using PhoBERT model"""
@@ -290,42 +419,64 @@ class ChatModel:
         } for recipe in recipes]
     
     async def generate_response(
-        self, 
-        text: str, 
-        history: List[Dict[str, str]] = [], 
+        self,
+        text: str,
+        history: List[Dict[str, str]] = [],
         language: str = "vi",
         user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate a response to user input"""
         # Ensure model is initialized
         await self.initialize()
-        
+
         # Detect intent
         intent_type = await self.detect_intent(text)
-        
+
+        # Extract entities (NER + domain dictionary + regex) from the message.
+        entities = await self.extract_entities(text)
+
+        # Trim conversation history to the configured context window so very
+        # long conversations don't blow past the model's useful context.
+        history = self._trim_history(history)
+
         # Get basic response based on intent
         response = await self._generate_intent_response(text, intent_type, user_id)
-        
+
         # Add suggested actions based on intent
         suggested_actions = await self._get_suggested_actions(intent_type)
-        
+
         # Add product recommendations if relevant
         suggested_products = []
         if intent_type in ["product_inquiry", "product_recommendation"]:
             suggested_products = await self.get_product_recommendations(text, user_id)
-        
+
         # Add recipe recommendations if relevant
         suggested_recipes = []
         if intent_type in ["cooking_tips"]:
             suggested_recipes = await self.get_recipe_recommendations(query=text)
-        
+
         return {
             "response": response,
             "intent_type": intent_type,
+            "entities": entities,
             "suggested_actions": suggested_actions,
             "suggested_products": suggested_products,
             "suggested_recipes": suggested_recipes
         }
+
+    def _trim_history(self, history: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        Keep only the most recent messages within the configured context
+        window. ``MAX_CONVERSATION_HISTORY`` counts conversational *turns*; a
+        turn is a (user, assistant) pair, so we keep up to 2x that many message
+        entries, preserving the latest ones.
+        """
+        max_turns = getattr(settings, "MAX_CONVERSATION_HISTORY", 10)
+        max_messages = max_turns * 2
+        if len(history) <= max_messages:
+            return history
+        return history[-max_messages:]
+
     
     async def _generate_intent_response(self, text: str, intent_type: str, user_id: Optional[str] = None) -> str:
         """Generate a response based on detected intent"""

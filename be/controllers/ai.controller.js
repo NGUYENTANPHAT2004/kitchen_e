@@ -1,4 +1,5 @@
 // controllers/ai.controller.js
+const mongoose = require('mongoose');
 const asyncHandler = require('../middlewares/async.middleware');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
@@ -6,10 +7,9 @@ const imageService = require('../utils/imageService');
 const s3Service = require('../utils/s3Service');
 const socketService = require('../services/socket.service');
 const aiService = require('../services/ai.service');
-const mongoose = require('mongoose');
-const User = mongoose.model('User');
-const AIAssistantLog = mongoose.model('AIAssistantLog');
-const Product = mongoose.model('Product');
+const User = require('../models/User');
+const AIAssistantLog = require('../models/AIAssistantLog');
+const Product = require('../models/Product');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -108,7 +108,7 @@ exports.processChat = asyncHandler(async (req, res, next) => {
     
     // Lưu vào AIAssistantLog
     const logData = {
-      userId: userId ? mongoose.Types.ObjectId(userId) : null,
+      userId: userId ? new mongoose.Types.ObjectId(userId) : null,
       sessionId: chatSessionId,
       query: message,
       response: response.response,
@@ -143,7 +143,7 @@ exports.processChat = asyncHandler(async (req, res, next) => {
     // Log lỗi vào AIAssistantLog
     if (message) {
       await AIAssistantLog.create({
-        userId: userId ? mongoose.Types.ObjectId(userId) : null,
+        userId: userId ? new mongoose.Types.ObjectId(userId) : null,
         sessionId: sessionId || uuidv4(),
         query: message,
         response: 'Error: ' + (error.message || 'Lỗi không xác định'),
@@ -182,7 +182,7 @@ exports.getPersonalizedRecommendations = asyncHandler(async (req, res, next) => 
     
     // Log tương tác AI
     await AIAssistantLog.create({
-      userId: mongoose.Types.ObjectId(userId),
+      userId: new mongoose.Types.ObjectId(userId),
       query: `Yêu cầu gợi ý sản phẩm cá nhân hóa${categoryId ? ' cho danh mục ' + categoryId : ''}`,
       response: `Đã gợi ý ${response.products?.length || 0} sản phẩm`,
       intentType: 'product_recommendation',
@@ -330,7 +330,7 @@ exports.processSpeech = asyncHandler(async (req, res, next) => {
     // Log tương tác AI nếu AI đã nhận dạng được văn bản
     if (response.recognized_text) {
       await AIAssistantLog.create({
-        userId: userId ? mongoose.Types.ObjectId(userId) : null,
+        userId: userId ? new mongoose.Types.ObjectId(userId) : null,
         sessionId: chatSessionId,
         query: response.recognized_text,
         response: response.response || 'Không có phản hồi',
@@ -425,7 +425,7 @@ exports.registerFace = asyncHandler(async (req, res, next) => {
     
     // Log tương tác AI
     await AIAssistantLog.create({
-      userId: mongoose.Types.ObjectId(userId),
+      userId: new mongoose.Types.ObjectId(userId),
       query: 'Face registration request',
       response: response.success ? 'Face registered successfully' : 'Face registration failed',
       intentType: 'face_auth',
@@ -493,7 +493,7 @@ exports.authenticateFace = asyncHandler(async (req, res, next) => {
     
     // Log tương tác AI
     await AIAssistantLog.create({
-      userId: response.success ? mongoose.Types.ObjectId(response.user_id) : null,
+      userId: response.success ? new mongoose.Types.ObjectId(response.user_id) : null,
       sessionId: uuidv4(),
       query: 'Face authentication request',
       response: response.success ? 'Authentication successful' : 'Authentication failed',
@@ -688,7 +688,7 @@ exports.getChatHistory = asyncHandler(async (req, res, next) => {
     if (sessionId) {
       query.sessionId = sessionId;
     } else if (userId) {
-      query.userId = mongoose.Types.ObjectId(userId);
+      query.userId = new mongoose.Types.ObjectId(userId);
     }
     
     // Lấy lịch sử trò chuyện

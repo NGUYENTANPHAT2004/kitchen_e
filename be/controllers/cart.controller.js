@@ -262,11 +262,22 @@ exports.addToCart = asyncHandler(async (req, res) => {
   }
   
   // Check if product is already in cart
-  const existingItem = await CartItem.findOne({
+  // Chuẩn hóa customizations thành chữ ký "name:value|..." để so sánh dòng giỏ
+  const parsedCustomizations = customizations
+    ? (typeof customizations === 'string' ? JSON.parse(customizations) : customizations)
+    : null;
+  const customizationSig = (obj) =>
+    obj && Object.keys(obj).length
+      ? Object.keys(obj).sort().map(k => `${k}:${obj[k]?.value ?? obj[k]}`).join('|')
+      : '';
+  const incomingSig = customizationSig(parsedCustomizations);
+
+  const candidateItems = await CartItem.find({
     cartId: cart._id,
     productId,
     variantId: variantId || null
   });
+  const existingItem = candidateItems.find(it => customizationSig(it.customizations) === incomingSig);
   
   if (existingItem) {
     // Update existing item
@@ -570,20 +581,62 @@ exports.clearCart = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.mergeCart = asyncHandler(async (req, res) => {
-  const { sessionId } = req.body;
-  
-  if (!sessionId) {
-    throw new ApiError('Session ID is required', 400);
-  }
-  
-  // Merge cart
-  const userCart = await Cart.mergeWithUserCart(sessionId, req.user._id);
-  
+  // FE gửi giỏ khách vãng lai (localStorage) dạng { items: [{ productId, variantId, quantity }] }
+  const { items = [] } = req.body;
+
+  // Tìm hoặc tạo giỏ active của user
+  let userCart = await Cart.findOne({ userId: req.user._id, status: 'active' });
   if (!userCart) {
-    throw new ApiError('No guest cart found to merge', 404);
+    userCart = await Cart.create({ userId: req.user._id, status: 'active' });
   }
-  
-  // Get cart details
+
+  // Gộp từng item vào giỏ user
+  const sig = (obj) =>
+    obj && Object.keys(obj).length
+      ? Object.keys(obj).sort().map(k => `${k}:${obj[k]?.value ?? obj[k]}`).join('|')
+      : '';
+
+  for (const raw of Array.isArray(items) ? items : []) {
+    const productId = raw.productId;
+    const variantId = raw.variantId || null;
+    const quantity = parseInt(raw.quantity, 10) || 1;
+    const customizations = raw.customizations || null;
+
+    if (!productId) continue;
+
+    // Bỏ qua sản phẩm không còn tồn tại (giỏ localStorage có thể đã cũ)
+    const product = await Product.findOne({ _id: productId, isDeleted: false });
+    if (!product) continue;
+
+    let variant = null;
+    if (variantId) {
+      variant = await ProductVariant.findOne({ _id: variantId, productId, isDeleted: false });
+      if (!variant) continue;
+    }
+
+    // Nếu sản phẩm+variant+customization đã có trong giỏ user thì cộng dồn số lượng
+    const incomingSig = sig(customizations);
+    const candidates = await CartItem.find({ cartId: userCart._id, productId, variantId });
+    const existingItem = candidates.find(it => sig(it.customizations) === incomingSig);
+    if (existingItem) {
+      existingItem.quantity += quantity;
+      await existingItem.save();
+    } else {
+      // price/customizations được pre-save hook của CartItem xác thực & tính lại từ DB
+      await CartItem.create({
+        cartId: userCart._id,
+        productId,
+        variantId,
+        quantity,
+        customizations: customizations || {},
+      });
+    }
+  }
+
+  // Tính lại tổng tiền giỏ
+  await userCart.calculateTotals();
+
+  // Populate chi tiết cho response
   await userCart.populate([
     {
       path: 'items',
@@ -599,7 +652,7 @@ exports.mergeCart = asyncHandler(async (req, res) => {
       ]
     }
   ]);
-  
+
   return ApiResponse.success(res, { cart: userCart }, 'Carts merged successfully');
 });
 

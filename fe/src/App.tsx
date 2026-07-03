@@ -3,41 +3,42 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, useRoutes } f
 import { Toaster } from 'react-hot-toast';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './features/auth/contexts/auth-context';
+import { CartProvider } from './features/cart/context/cart-context';
 import DashboardLayout from './components/layout/dashboard-layout';
 import Clientsetup from './components/layout/Clientsetup';
-import CheckoutPage from './pages/client/Checkout/CheckoutPage';
-import BakewareCategoryPage from './pages/client/Category/BakewareCategoryPage';
-import OrdersPage from './pages/client/order/Myorder';
-import AlwaysPanProductPage from './pages/client/Product/ProductDetail';
+import CheckoutPage from './features/order/pages/client/checkout/CheckoutPage';
+import BakewareCategoryPage from './features/category/page/BakewareCategoryPage';
+import AlwaysPanProductPage from './features/products/pages/client/ProductDetail';
 import { authRoutes } from './features/auth/routes/auth-routes';
 import ProtectedRoute from './features/auth/components/protected-route';
 import AddProductPage from './features/products/pages/dashboard/AddProductPage';
 import EditProductPage from './features/products/pages/dashboard/EditProductPage';
-import ProductDetailPage from './pages/products/ProductDetailPage';
-import ProductListPage from './pages/products/ProductListPage';
 import ProductCustomizationsPage from './features/products/pages/dashboard/ProductCustomizationsPage';
-import UserList from './pages/users/UserList';
+import ProductListPage from './features/products/pages/dashboard/ProductListPage';
+import ProductDetailPage from './features/products/pages/dashboard/ProductDetailPage';
+import CategoryManagement from './features/category/components/dashboard/CategoryManagement';
+import UserList from './features/users/pages/UserList';
+import OrdersPage from './features/order/pages/client/order/Myorder';
 
 // Lazy load all admin pages
 const Dashboard = React.lazy(() => import('./pages/dashboard/dashboard-overview'));
-const CategoryManagement = React.lazy(() => import('./pages/products/CategoryManagement'));
+
 const ProductCustomizations = React.lazy(() => import('./features/products/components/ProductCustomizations/ProductCustomizations'));
-const Orders = React.lazy(() => import('./pages/orders/OrderList'));
-const CustomerList = React.lazy(() => import('./pages/users/UserList'));
-const AddFlashSale = React.lazy(() => import('./pages/marketing/AddFlashSale'));
-const FlashSaleList = React.lazy(() => import('./pages/marketing/FlashSaleList'));
-const Vouchers = React.lazy(() => import('./pages/marketing/Vouchers'));
-const BundleManagement = React.lazy(() => import('./pages/marketing/BundleManagement'));
-const RecipeManagement = React.lazy(() => import('./pages/recipes/RecipeManagement'));
-const AddRecipe = React.lazy(() => import('./pages/recipes/AddRecipe'));
-const ReviewManagement = React.lazy(() => import('./pages/reviews/ReviewManagement'));
-const NotificationManagement = React.lazy(() => import('./pages/notification/NotificationManagement'));
-const SalesReport = React.lazy(() => import('./pages/reports/SalesReport'));
-const BestsellersReport = React.lazy(() => import('./pages/reports/BestsellersReport'));
-const CustomerReport = React.lazy(() => import('./pages/reports/CustomerReport'));
-const AIAssistant = React.lazy(() => import('./pages/ai-assistant/AIAssitantManagement'));
+const Orders = React.lazy(() => import('./features/order/pages/dashboard/OrderList'));
+const AddFlashSale = React.lazy(() => import('./features/flash-sales/pages/dashboard/AddFlashSale'));
+const FlashSaleList = React.lazy(() => import('./features/flash-sales/pages/dashboard/FlashSaleList'));
+const Vouchers = React.lazy(() => import('./features/vouchers/pages/dashboard/Vouchers'));
+const BundleManagement = React.lazy(() => import('./features/bundles/pages/BundleManagement'));
+const RecipeManagement = React.lazy(() => import('./features/recipes/pages/RecipeManagement'));
+const AddRecipe = React.lazy(() => import('./features/recipes/pages/AddRecipe'));
+const ReviewManagement = React.lazy(() => import('./features/reviews/pages/ReviewManagement'));
+const NotificationManagement = React.lazy(() => import('./features/notifications/page/NotificationManagement'));
+const SalesReport = React.lazy(() => import('./features/report/page/dashboard/SalesReport'));
+const BestsellersReport = React.lazy(() => import('./features/report/page/dashboard/BestsellersReport'));
+const CustomerReport = React.lazy(() => import('./features/report/page/dashboard/CustomerReport'));
+const AIAssistant = React.lazy(() => import('./features/ai/pages/dashboard/AIAssitantManagement'));
 const SystemSettings = React.lazy(() => import('./pages/settings/SystemSetting'));
-const VouchersPage = React.lazy(() => import('./pages/client/Voucher/VouchersPage'));
+const VouchersPage = React.lazy(() => import('./features/vouchers/pages/client/VouchersPage'));
 
 // Import your profile page
 const ProfilePage = React.lazy(() => import('./features/auth/pages/profile-page'));
@@ -78,7 +79,7 @@ const AppRoutes: React.FC = () => {
         { index: true, element: <Navigate to="/shop/home" replace /> },
         { path: 'home', element: <Clientsetup /> },
         { path: 'category/:categoryId', element: <BakewareCategoryPage /> },
-        { path: 'product/:productId', element: <AlwaysPanProductPage /> },
+        { path: 'product/:id', element: <AlwaysPanProductPage /> },
         { path: 'checkout', element: <ProtectedRoute><CheckoutPage /></ProtectedRoute> },
         
         // Account related pages
@@ -118,10 +119,9 @@ const AppRoutes: React.FC = () => {
           children: [
             { index: true, element: <ProductListPage /> },
             { path: 'add', element: <AddProductPage /> },
-            { path: ':id', element: < ProductDetailPage   /> },
-            { path: ':id/edit', element: <EditProductPage /> },
             { path: 'categories', element: <CategoryManagement /> },
-            { path: ':id/customizations', element: <ProductCustomizationsPage /> }
+            { path: ':id/customizations', element: <ProductCustomizationsPage /> },
+            { path: ':id', element: <ProductDetailPage /> }
           ]
         },
         
@@ -234,9 +234,11 @@ const App: React.FC = () => {
       <Router>
         <Toaster position="top-right" />
         <AuthProvider>
-          <React.Suspense fallback={<Loading />}>
-            <AppRoutes />
-          </React.Suspense>
+          <CartProvider>
+            <React.Suspense fallback={<Loading />}>
+              <AppRoutes />
+            </React.Suspense>
+          </CartProvider>
         </AuthProvider>
       </Router>
     </QueryClientProvider>

@@ -1,7 +1,15 @@
+from __future__ import annotations
 import logging
-import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModel
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModel
+    _TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    AutoTokenizer = None
+    AutoModel = None
+    _TORCH_AVAILABLE = False
 import os
 from typing import Dict, List, Any, Optional
 import asyncio
@@ -17,27 +25,30 @@ class ProductEmbeddingModel:
         if cls._instance is None:
             cls._instance = super(ProductEmbeddingModel, cls).__new__(cls)
             cls._instance.initialized = False
-            cls._instance.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            cls._instance.embedding_dim = 768  # Default embedding dimension
+            cls._instance.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if _TORCH_AVAILABLE else 'cpu'
+            cls._instance.embedding_dim = 768
         return cls._instance
     
     async def initialize(self):
         """Initialize the product embedding model"""
         if self.initialized:
             return
-            
+
         try:
-            # Load PhoBERT for Vietnamese (or another appropriate model)
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                settings.PHOBERT_MODEL_PATH,
-                use_auth_token=settings.HUGGINGFACE_API_KEY
-            )
-            
-            self.model = AutoModel.from_pretrained(
-                settings.PHOBERT_MODEL_PATH,
-                use_auth_token=settings.HUGGINGFACE_API_KEY
-            ).to(self.device)
-            
+            if _TORCH_AVAILABLE and AutoTokenizer is not None:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    settings.PHOBERT_MODEL_PATH,
+                    use_auth_token=settings.HUGGINGFACE_API_KEY
+                )
+                self.model = AutoModel.from_pretrained(
+                    settings.PHOBERT_MODEL_PATH,
+                    use_auth_token=settings.HUGGINGFACE_API_KEY
+                ).to(self.device)
+            else:
+                self.tokenizer = None
+                self.model = None
+                logger.warning("torch/transformers not available — embedding model using fallback")
+
             self.initialized = True
             logger.info("Product embedding model initialized successfully")
         except Exception as e:

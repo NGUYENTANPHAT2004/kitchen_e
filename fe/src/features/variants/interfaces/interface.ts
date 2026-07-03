@@ -19,6 +19,7 @@ export interface ProductVariant {
   updatedAt: string;
 }
 
+export type Variant = ProductVariant;
 export interface VariantFormData {
   name: string;
   sku: string;

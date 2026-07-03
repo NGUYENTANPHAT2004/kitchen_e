@@ -100,8 +100,8 @@ const CategoryManagement: React.FC = () => {
             onEdit={openModal}
             onDelete={(id) => deleteMutation.mutate(id)}
             onRestore={(id) => restoreMutation.mutate(id)}
-            isDeleting={deleteMutation.isPending}
-            isRestoring={restoreMutation.isPending}
+            isDeleting={deleteMutation.isLoading}
+            isRestoring={restoreMutation.isLoading}
           />
         </Spin>
 
@@ -119,7 +119,7 @@ const CategoryManagement: React.FC = () => {
             treeCategories={treeCategories}
             fileList={fileList}
             uploading={uploading}
-            isSubmitting={saveMutation.isPending}
+            isSubmitting={saveMutation.isLoading}
             onFinish={handleSubmit}
             onCancel={closeModal}
             onPreview={handlePreview}

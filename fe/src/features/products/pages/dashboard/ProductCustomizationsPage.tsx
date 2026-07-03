@@ -3,11 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Modal, Typography, Alert, Breadcrumb, message } from 'antd';
 import { PlusOutlined, ArrowLeftOutlined, HomeOutlined, ShopOutlined } from '@ant-design/icons';
 import { useProductCustomizations, useCreateCustomization, useUpdateCustomization, useDeleteCustomization } from '../../../customizations/hooks/useCustomizations';
-import type { Customization, CustomizationFormData } from '../../../../types/customization.types';
 import CustomizationList from '../../../customizations/components/CustomizationList';
 import CustomizationForm from '../../../customizations/components/CustomizationForm';
 import LoadingState from '../../../../components/shared/LoadingState';
 import { useProduct } from '../../hooks/useProducts';
+import type { Customization, CustomizationFormData } from '../../../customizations/interface/interface';
 
 const { Title } = Typography;
 
@@ -16,34 +16,18 @@ interface ApiError {
 }
 
 const ProductCustomizationsPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id: productId = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingCustomization, setEditingCustomization] = useState<Customization | null>(null);
 
-  console.log('🔍 ProductCustomizationsPage: Mounted with productId:', id);
-
-  // Check if productId is valid early
-  if (!id) {
-    message.error('Không tìm thấy ID sản phẩm. Vui lòng thử lại.');
-    navigate('/products');
-    return null;
-  }
-
   // Fetch product info
-  const { data: productData, isLoading: isLoadingProduct } = useProduct(id);
-  
+  const { data: productData, isLoading: isLoadingProduct } = useProduct(productId);
+
   // Fetch customizations
-  const { data: customizations, isLoading, error, refetch } = useProductCustomizations(id);
+  const { data: customizations, isLoading, error, refetch } = useProductCustomizations(productId);
 
-  // Add detailed logging for customizations
-  console.log('🔍 ProductCustomizationsPage: Customizations Data:', {
-    customizations,
-    rawData: JSON.stringify(customizations, null, 2)
-  });
-
-  // Get the actual customizations array from the nested response
-  const customizationsList = customizations?.data?.data?.customizations || [];
+  const customizationsList: Customization[] = Array.isArray(customizations) ? customizations : [];
 
   // Mutations
   const createCustomizationMutation = useCreateCustomization();
@@ -52,38 +36,28 @@ const ProductCustomizationsPage: React.FC = () => {
 
   const product = productData?.data.product;
 
-  console.log('🔍 ProductCustomizationsPage: State:', {
-    product: product?.name,
-    customizationsCount: customizations?.length || 0,
-    isLoading,
-    error: (error as ApiError)?.message
-  });
-
   const handleModalOpen = (customization?: Customization) => {
-    console.log('🔍 ProductCustomizationsPage: Opening modal for:', customization?.name || 'new customization');
     setEditingCustomization(customization || null);
     setIsModalVisible(true);
   };
 
   const handleModalClose = () => {
-    console.log('🔍 ProductCustomizationsPage: Closing modal');
     setIsModalVisible(false);
     setEditingCustomization(null);
   };
 
   const handleSubmit = async (data: CustomizationFormData) => {
     try {
-      console.log('🔍 ProductCustomizationsPage: Submitting customization:', data);
       
       if (editingCustomization) {
         await updateCustomizationMutation.mutateAsync({
-          productId: id,
+          productId,
           customizationId: editingCustomization._id,
           data
         });
       } else {
         await createCustomizationMutation.mutateAsync({
-          productId: id,
+          productId,
           data
         });
       }
@@ -95,12 +69,11 @@ const ProductCustomizationsPage: React.FC = () => {
   };
 
   const handleDelete = (customizationId: string) => {
-    console.log('🔍 ProductCustomizationsPage: Deleting customization:', customizationId);
-    deleteCustomizationMutation.mutate({ productId: id, customizationId });
+    deleteCustomizationMutation.mutate({ productId, customizationId });
   };
 
   const handleBackToProduct = () => {
-    navigate(`/products/${id}`);
+    navigate(`/products/${productId}`);
   };
 
   const handleBackToProducts = () => {

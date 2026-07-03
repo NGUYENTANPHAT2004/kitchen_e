@@ -194,6 +194,35 @@ export const endpoints = {
     byId: (id: string) => `/users/${id}`,
     profile: '/users/profile',
   },
+
+  bundles: {
+    base: '/bundles',
+    featured: '/bundles/featured',
+    active: '/bundles/active',
+    byId: (id: string) => `/bundles/${id}`,
+    restore: (id: string) => `/bundles/${id}/restore`,
+    items: (bundleId: string) => `/bundles/${bundleId}/items`,
+  },
+
+  notifications: {
+    base: '/notifications',
+    byId: (id: string) => `/notifications/${id}`,
+    read: (id: string) => `/notifications/${id}/read`,
+    dismiss: (id: string) => `/notifications/${id}/dismiss`,
+    bulk: '/notifications/bulk',
+  },
+
+  ai: {
+    chat: '/ai/chat',
+    chatHistory: '/ai/chat/history',
+    frequentQueries: '/ai/chat/frequent-queries',
+    intentDistribution: '/ai/analytics/intent-distribution',
+    feedbackStats: '/ai/analytics/feedback-stats',
+    personalized: '/ai/recommendations/personalized',
+    similar: (productId: string) => `/ai/recommendations/similar/${productId}`,
+    recipes: (productId: string) => `/ai/recipes/${productId}`,
+    feedback: (logId: string) => `/ai/feedback/${logId}`,
+  },
 };
 
 export const config = {

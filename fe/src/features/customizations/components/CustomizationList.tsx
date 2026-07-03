@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Space, Popconfirm, Tag, Image, Tooltip } from 'antd';
+import { Button, Space, Popconfirm, Tag, Image, Tooltip, Table } from 'antd';
 import { EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import type { Customization, CustomizationOption } from '../interface/interface';
 import { formatCurrency } from '../../../utils/format';
@@ -197,6 +197,17 @@ const CustomizationList: React.FC<CustomizationListProps> = ({
       )
     } as any);
   }
+
+  return (
+    <Table
+      columns={columns}
+      dataSource={customizations}
+      rowKey="_id"
+      loading={loading}
+      scroll={{ x: 800 }}
+      pagination={{ pageSize: 10, showSizeChanger: true }}
+    />
+  );
 };
 
 export default CustomizationList;

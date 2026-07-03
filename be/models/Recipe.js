@@ -1,6 +1,7 @@
 // models/Recipe.js
 const mongoose = require('mongoose');
 const slugify = require('slugify');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
 const RecipeSchema = new mongoose.Schema(
   {
@@ -323,4 +324,5 @@ RecipeSchema.index({ mealType: 1 });
 RecipeSchema.index({ difficulty: 1 });
 RecipeSchema.index({ cuisineType: 1 });
 
+RecipeSchema.plugin(mongoosePaginate);
 module.exports = mongoose.model('Recipe', RecipeSchema);

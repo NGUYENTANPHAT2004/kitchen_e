@@ -15,9 +15,8 @@ import {
   Card,
   Typography,
   Popconfirm,
-  message,
   Upload,
-  Image
+
 } from 'antd';
 import {
   PlusOutlined,

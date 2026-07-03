@@ -1,7 +1,6 @@
 // app.js - Updated với enhanced file upload support
 const express = require('express');
 require('dotenv').config();
-const mongoose = require('mongoose');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
@@ -14,7 +13,6 @@ const passport = require('./config/passport');
 const errorHandler = require('./middlewares/error.middleware');
 const { requestLogger, errorLogger } = require('./middlewares/logger.middleware');
 const { defaultLimiter, authLimiter } = require('./middlewares/limiter.middleware');
-const { attachSocketService } = require('./middlewares/socket.middleware');
 const path = require('path');
 
 const { initializeStaticFiles } = require('./middlewares/static.middleware');
@@ -142,7 +140,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 }));
 
 
-app.use('/uploads', (req, res, next) => {
+app.use('/uploads', (req, res) => {
   const filePath = req.path;
   
   console.log('File not found:', filePath);
@@ -253,6 +251,7 @@ app.use('/api/reviews', require('./routes/api/reviews.routes'));
 app.use('/api/vouchers', require('./routes/api/vouchers.routes'));
 app.use('/api/notifications', require('./routes/api/notifications.routes'));
 app.use('/api/socket', require('./routes/api/socket.routes'));
+app.use('/api/ai', require('./routes/api/ai.routes'));
 
 
 app.get('/api', (req, res) => {
@@ -265,6 +264,7 @@ app.get('/api', (req, res) => {
       categories: '/api/categories',
       products: '/api/products',
       users: '/api/users',
+      ai: '/api/ai',
       health: '/api/health',
       utils: {
         fileUrl: '/api/utils/file-url/:path',

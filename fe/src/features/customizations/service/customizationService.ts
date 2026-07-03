@@ -17,7 +17,7 @@ export const customizationService = {
   async getProductCustomization(productId: string, customizationId: string) {
     try {
       const response = await api.get(`/products/${productId}/customizations/${customizationId}`);
-      return response.data?.customization;
+      return response.data?.data?.customization;
     } catch (error: any) {
       console.error('Failed to fetch customization:', error);
       throw new Error(error.response?.data?.message || 'Failed to fetch customization');
@@ -66,12 +66,6 @@ export const customizationService = {
           formData.append('optionIndices', index);
         });
       }
-
-      console.log('🔍 FormData contents for create:');
-      for (let pair of formData.entries()) {
-        console.log(pair[0], pair[1]);
-      }
-
       const response = await api.post(`/products/${productId}/customizations`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 60000
@@ -130,12 +124,6 @@ export const customizationService = {
       if (data.removeOptionImages && data.removeOptionImages.length > 0) {
         formData.append('removeOptionImages', JSON.stringify(data.removeOptionImages));
       }
-
-      console.log('🔍 FormData contents for update:');
-      for (let pair of formData.entries()) {
-        console.log(pair[0], pair[1]);
-      }
-
       const response = await api.put(`/products/${productId}/customizations/${customizationId}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 60000

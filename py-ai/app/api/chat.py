@@ -6,6 +6,7 @@ from datetime import datetime
 import uuid
 from app.models.chat_model import ChatModel
 from app.utils.db_connector import mongo_client
+from app.config import settings
 from bson import ObjectId
 import asyncio
 
@@ -55,12 +56,14 @@ async def chat_message(
             )
             
             if conversation:
-                # Get previous messages for context
+                # Get previous messages for context. The window size is driven
+                # by settings.MAX_CONVERSATION_HISTORY (turns) so long
+                # conversations keep enough context without unbounded growth.
                 previous_messages = await mongo_client.find_many(
                     "aiAssistantLogs",
                     {"sessionId": session_id},
                     sort=[("createdAt", 1)],
-                    limit=10  # Limit to last 10 messages for context
+                    limit=settings.MAX_CONVERSATION_HISTORY
                 )
                 
                 for msg in previous_messages:

@@ -85,7 +85,7 @@ CartItemSchema.post('findOneAndUpdate', async function(doc) {
 CartItemSchema.pre('save', async function(next) {
   try {
     // Only run if the cartItem is new or quantity is modified
-    if (this.isNew || this.isModified('quantity') || this.isModified('productId') || this.isModified('variantId')) {
+    if (this.isNew || this.isModified('quantity') || this.isModified('productId') || this.isModified('variantId') || this.isModified('customizations')) {
       // Get product details
       const Product = mongoose.model('Product');
       const product = await Product.findById(this.productId);
@@ -141,14 +141,38 @@ CartItemSchema.pre('save', async function(next) {
           if (flashSaleItem.remainingQuantity < this.quantity) {
             return next(new Error(`Flash sale only has ${flashSaleItem.remainingQuantity} units left`));
           }
-          
+
           finalPrice = flashSaleItem.discountedPrice;
         } else {
           // Reset flash sale reference if flash sale is no longer valid
           this.flashSaleItemId = null;
         }
       }
-      
+
+      // Cộng phụ giá customization — tra từ DB để giá luôn chuẩn (không tin client gửi)
+      if (this.customizations && Object.keys(this.customizations).length > 0) {
+        const ProductCustomization = mongoose.model('ProductCustomization');
+        const defs = await ProductCustomization.find({
+          productId: this.productId,
+          isActive: true
+        });
+
+        let customizationExtra = 0;
+        const verified = {};
+        for (const [name, selected] of Object.entries(this.customizations)) {
+          const value = selected && selected.value;
+          if (!value) continue;
+          const def = defs.find(d => d.name === name);
+          const option = def && def.options.find(o => o.value === value);
+          if (!option) continue; // bỏ lựa chọn không hợp lệ
+          customizationExtra += option.priceAdjustment || 0;
+          verified[name] = { value, priceAdjustment: option.priceAdjustment || 0 };
+        }
+        // Ghi đè bằng dữ liệu đã xác thực từ DB
+        this.customizations = verified;
+        finalPrice += customizationExtra;
+      }
+
       // Update price
       this.price = finalPrice;
     }

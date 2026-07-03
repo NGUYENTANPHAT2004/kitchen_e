@@ -1,9 +1,10 @@
 import React from 'react';
 import { Table, Button, Space, Popconfirm, Tag, Image, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, RestOutlined } from '@ant-design/icons';
-import type { ProductVariant } from '../../services/variantService';
-import { formatCurrency } from '../../utils/format';
-import { urlUtils } from '../../config/api.config';
+import type { ProductVariant } from '../interfaces/interface';
+import { urlUtils } from '../../../config/api_cli.config';
+import { formatCurrency } from '../../../utils/format';
+
 
 interface VariantListProps {
   variants: ProductVariant[];

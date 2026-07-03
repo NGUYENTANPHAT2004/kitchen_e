@@ -6,6 +6,8 @@ import uuid
 import os
 import aiofiles
 from typing import Optional
+from datetime import datetime
+import numpy as np
 from app.models.face_detection import FaceRecognitionModel
 from app.utils.db_connector import mongo_client
 from app.utils.error_handler import handle_exceptions
@@ -231,7 +233,3 @@ async def delete_face_data(user_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete face data: {str(e)}"
         )
-
-# Import necessary modules
-from datetime import datetime
-import numpy as np

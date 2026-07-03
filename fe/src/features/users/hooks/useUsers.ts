@@ -9,7 +9,7 @@ import type {
   UserListRequest,
   UserFilters,
   UpdateUserRequest
-} from '../../../types/user-interfaces';
+} from '../interfaces/interface';
 
 export const useUsers = (initialFilters: Partial<UserListRequest> = {}) => {
   const queryClient = useQueryClient();
@@ -245,11 +245,11 @@ export const useUsers = (initialFilters: Partial<UserListRequest> = {}) => {
     getUsersByRole,
     
     // Mutation states
-    isUpdating: updateUserMutation.isPending,
-    isChangingRole: changeRoleMutation.isPending,
-    isDeleting: deleteUserMutation.isPending,
-    isRestoring: restoreUserMutation.isPending,
-    isBulkDeleting: bulkDeleteMutation.isPending,
-    isExporting: exportMutation.isPending
+    isUpdating: updateUserMutation.isLoading,
+    isChangingRole: changeRoleMutation.isLoading,
+    isDeleting: deleteUserMutation.isLoading,
+    isRestoring: restoreUserMutation.isLoading,
+    isBulkDeleting: bulkDeleteMutation.isLoading,
+    isExporting: exportMutation.isLoading
   };
 };

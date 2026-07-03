@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { customizationService } from '../service/customizationService';
-import type { CustomizationFormData } from '../../../types/customization.types';
+import type { CustomizationFormData } from '../interface/interface';
 export const useProductCustomizations = (productId: string) => {
   return useQuery({
     queryKey: ['product-customizations', productId],

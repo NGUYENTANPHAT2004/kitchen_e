@@ -18,6 +18,14 @@ export const useProduct = (id: string) => {
   });
 };
 
+export const useBestSellingProducts = (limit: number = 15) => {
+  return useQuery({
+    queryKey: ['products', 'best-selling', limit],
+    queryFn: () => productService.getBestSellingProducts(limit),
+    staleTime: 5 * 60 * 1000
+  });
+};
+
 export const useCreateProduct = () => {
   const queryClient = useQueryClient();
   

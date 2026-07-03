@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Table, Button, Space, Popconfirm, Tag, Image, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, RestOutlined, EyeOutlined } from '@ant-design/icons';
 import type { Product } from '../../services/productService';

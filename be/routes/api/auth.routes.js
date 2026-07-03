@@ -10,7 +10,6 @@ const {
   generalRateLimit,
   debugJWT,
   testAuth,
-  debugAuth
 } = require('../../middlewares/auth.middleware');
 
 // 🔧 FIXED: Apply appropriate rate limits to different endpoints

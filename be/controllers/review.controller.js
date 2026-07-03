@@ -314,7 +314,7 @@ exports.getProductReviews = asyncHandler(async (req, res, next) => {
   const stats = await Review.aggregate([
     {
       $match: {
-        productId: mongoose.Types.ObjectId(req.params.productId),
+        productId: new mongoose.Types.ObjectId(req.params.productId),
         isApproved: true,
         isDeleted: false
       }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Select, TreeSelect, Spin, Alert } from 'antd';
-import { useCategoriesForProducts, categoryUtils } from '../../../../hooks/useCategories';
+import { categoryUtils, useCategoriesForProducts } from '../../../category/hooks/useCategories';
+
 
 interface CategorySelectProps {
   value?: string;

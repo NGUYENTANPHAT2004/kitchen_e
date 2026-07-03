@@ -1,601 +1,705 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Query, Path, status
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from __future__ import annotations
 import logging
-from datetime import datetime
-from app.models.recommendation import RecommendationEngine
+import numpy as np
+import os
+import json
+import pickle
+from typing import List, Dict, Any, Optional, Tuple
+import asyncio
+from datetime import datetime, timedelta
+try:
+    import torch
+    _TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    _TORCH_AVAILABLE = False
+from sklearn.metrics.pairwise import cosine_similarity
+from app.config import settings
+from app.models.product_embedding import ProductEmbeddingModel
 from app.utils.db_connector import mongo_client
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
 
-# Re-use the recommendation engine for product similarity features
-recommendation_engine = RecommendationEngine()
+class RecommendationEngine:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(RecommendationEngine, cls).__new__(cls)
+            cls._instance.initialized = False
+            cls._instance.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if _TORCH_AVAILABLE else 'cpu'
+        return cls._instance
+    
+    async def initialize(self):
+        """Initialize the recommendation engine"""
+        if self.initialized:
+            return
 
-class RecipeRecommendationRequest(BaseModel):
-    user_id: Optional[str] = None
-    product_id: Optional[str] = None
-    ingredients: Optional[List[str]] = None
-    cuisine_type: Optional[str] = None
-    difficulty: Optional[str] = None
-    max_preparation_time: Optional[int] = None
-    limit: int = Field(10, ge=1, le=50)
+        try:
+            # Initialize the product embedding model
+            self.embedding_model = ProductEmbeddingModel()
+            await self.embedding_model.initialize()
 
-class RecipeRecommendationResponse(BaseModel):
-    recipes: List[Dict[str, Any]]
-    recommendation_type: str
+            # Load cached embeddings if available
+            embeddings_path = os.path.join(settings.EMBEDDINGS_PATH, "product_embeddings.pkl")
 
-@router.post("/recommend", response_model=RecipeRecommendationResponse)
-async def recommend_recipes(request: RecipeRecommendationRequest = Body(...)):
-    """
-    Get recipe recommendations based on various parameters
-    """
-    try:
-        # Determine recommendation type based on input
-        if request.product_id:
-            # Recommend recipes that use this product
-            recipes = await get_recipes_by_product(
-                request.product_id,
-                limit=request.limit
-            )
-            recommendation_type = "product_based"
-            
-        elif request.user_id:
-            # Personalized recipe recommendations
-            recipes = await get_personalized_recipes(
-                request.user_id,
-                limit=request.limit,
-                max_preparation_time=request.max_preparation_time,
-                difficulty=request.difficulty
-            )
-            recommendation_type = "personalized"
-            
-        elif request.ingredients:
-            # Recommend recipes that use these ingredients
-            recipes = await get_recipes_by_ingredients(
-                request.ingredients,
-                limit=request.limit,
-                max_preparation_time=request.max_preparation_time,
-                difficulty=request.difficulty
-            )
-            recommendation_type = "ingredient_based"
-            
-        elif request.cuisine_type:
-            # Recommend recipes of a specific cuisine
-            recipes = await get_recipes_by_cuisine(
-                request.cuisine_type,
-                limit=request.limit,
-                max_preparation_time=request.max_preparation_time,
-                difficulty=request.difficulty
-            )
-            recommendation_type = "cuisine_based"
-            
+            if os.path.exists(embeddings_path):
+                with open(embeddings_path, "rb") as f:
+                    self.product_embeddings = pickle.load(f)
+                logger.info(f"Loaded {len(self.product_embeddings)} product embeddings from cache")
+            else:
+                self.product_embeddings = {}
+                logger.info("No cached product embeddings found, starting with empty embeddings")
+
+            # Load user embeddings if available
+            user_embeddings_path = os.path.join(settings.EMBEDDINGS_PATH, "user_embeddings.pkl")
+
+            if os.path.exists(user_embeddings_path):
+                with open(user_embeddings_path, "rb") as f:
+                    self.user_embeddings = pickle.load(f)
+                logger.info(f"Loaded {len(self.user_embeddings)} user embeddings from cache")
+            else:
+                self.user_embeddings = {}
+                logger.info("No cached user embeddings found, starting with empty embeddings")
+
+            self.product_info_cache = {}
+
+            # Only check embeddings if the ML model is actually available
+            if _TORCH_AVAILABLE:
+                await self._check_and_update_embeddings()
+
+            self.initialized = True
+            logger.info("Recommendation engine initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize recommendation engine: {str(e)}")
+            raise
+    
+    async def _check_and_update_embeddings(self):
+        """Check if embeddings need to be updated and update them if necessary"""
+        # Check when embeddings were last updated
+        last_update_path = os.path.join(settings.EMBEDDINGS_PATH, "last_update.json")
+        
+        if os.path.exists(last_update_path):
+            with open(last_update_path, "r") as f:
+                last_update = json.load(f)
+                last_update_time = datetime.fromisoformat(last_update.get("timestamp", "2000-01-01T00:00:00"))
         else:
-            # Fallback to popular recipes
-            recipes = await get_popular_recipes(
-                limit=request.limit,
-                max_preparation_time=request.max_preparation_time,
-                difficulty=request.difficulty
-            )
-            recommendation_type = "popular"
+            last_update_time = datetime(2000, 1, 1)  # Very old date to force update
         
-        # Log recommendation request if user_id provided
-        if request.user_id:
-            log_data = {
-                "userId": ObjectId(request.user_id),
-                "recommendationType": recommendation_type,
-                "parameters": {
-                    "productId": request.product_id,
-                    "ingredients": request.ingredients,
-                    "cuisineType": request.cuisine_type,
-                    "difficulty": request.difficulty,
-                    "maxPreparationTime": request.max_preparation_time,
-                    "limit": request.limit
-                },
-                "resultCount": len(recipes),
-                "createdAt": datetime.utcnow()
-            }
-            await mongo_client.insert_one("recipeRecommendationLogs", log_data)
-        
-        return {
-            "recipes": recipes,
-            "recommendation_type": recommendation_type
-        }
-    
-    except Exception as e:
-        logger.error(f"Error generating recipe recommendations: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate recipe recommendations: {str(e)}"
-        )
-
-@router.get("/popular", response_model=RecipeRecommendationResponse)
-async def get_popular_recipes_api(
-    limit: int = Query(10, ge=1, le=50),
-    max_preparation_time: Optional[int] = Query(None),
-    difficulty: Optional[str] = Query(None)
-):
-    """
-    Get popular recipes
-    """
-    try:
-        recipes = await get_popular_recipes(
-            limit=limit,
-            max_preparation_time=max_preparation_time,
-            difficulty=difficulty
-        )
-        
-        return {
-            "recipes": recipes,
-            "recommendation_type": "popular"
-        }
-    
-    except Exception as e:
-        logger.error(f"Error getting popular recipes: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get popular recipes: {str(e)}"
-        )
-
-@router.get("/by-product/{product_id}", response_model=RecipeRecommendationResponse)
-async def get_recipes_by_product_api(
-    product_id: str = Path(...),
-    limit: int = Query(10, ge=1, le=50)
-):
-    """
-    Get recipes that use a specific product
-    """
-    try:
-        recipes = await get_recipes_by_product(
-            product_id,
-            limit=limit
-        )
-        
-        return {
-            "recipes": recipes,
-            "recommendation_type": "product_based"
-        }
-    
-    except Exception as e:
-        logger.error(f"Error getting recipes by product: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get recipes by product: {str(e)}"
-        )
-
-@router.get("/by-ingredients", response_model=RecipeRecommendationResponse)
-async def get_recipes_by_ingredients_api(
-    ingredients: List[str] = Query(...),
-    limit: int = Query(10, ge=1, le=50),
-    max_preparation_time: Optional[int] = Query(None),
-    difficulty: Optional[str] = Query(None)
-):
-    """
-    Get recipes that use specific ingredients
-    """
-    try:
-        recipes = await get_recipes_by_ingredients(
-            ingredients,
-            limit=limit,
-            max_preparation_time=max_preparation_time,
-            difficulty=difficulty
-        )
-        
-        return {
-            "recipes": recipes,
-            "recommendation_type": "ingredient_based"
-        }
-    
-    except Exception as e:
-        logger.error(f"Error getting recipes by ingredients: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get recipes by ingredients: {str(e)}"
-        )
-
-@router.get("/personalized/{user_id}", response_model=RecipeRecommendationResponse)
-async def get_personalized_recipes_api(
-    user_id: str = Path(...),
-    limit: int = Query(10, ge=1, le=50),
-    max_preparation_time: Optional[int] = Query(None),
-    difficulty: Optional[str] = Query(None)
-):
-    """
-    Get personalized recipe recommendations for a user
-    """
-    try:
-        recipes = await get_personalized_recipes(
-            user_id,
-            limit=limit,
-            max_preparation_time=max_preparation_time,
-            difficulty=difficulty
-        )
-        
-        # Log recommendation request
-        log_data = {
-            "userId": ObjectId(user_id),
-            "recommendationType": "personalized",
-            "parameters": {
-                "limit": limit,
-                "maxPreparationTime": max_preparation_time,
-                "difficulty": difficulty
-            },
-            "resultCount": len(recipes),
-            "createdAt": datetime.utcnow()
-        }
-        await mongo_client.insert_one("recipeRecommendationLogs", log_data)
-        
-        return {
-            "recipes": recipes,
-            "recommendation_type": "personalized"
-        }
-    
-    except Exception as e:
-        logger.error(f"Error getting personalized recipes: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get personalized recipes: {str(e)}"
-        )
-
-@router.post("/feedback")
-async def record_recipe_feedback(
-    user_id: str = Body(...),
-    recipe_id: str = Body(...),
-    action: str = Body(...),  # viewed, favorited, cooked, rated
-    rating: Optional[int] = Body(None),
-    comment: Optional[str] = Body(None)
-):
-    """
-    Record user feedback on recipes for improving recommendations
-    """
-    try:
-        # Verify user exists
-        user = await mongo_client.find_one("users", {"_id": ObjectId(user_id)})
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # Verify recipe exists
-        recipe = await mongo_client.find_one("recipes", {"_id": ObjectId(recipe_id)})
-        if not recipe:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Recipe not found"
-            )
-        
-        # Record feedback
-        feedback_data = {
-            "userId": ObjectId(user_id),
-            "recipeId": ObjectId(recipe_id),
-            "action": action,
-            "createdAt": datetime.utcnow()
-        }
-        
-        if rating is not None:
-            feedback_data["rating"] = rating
+        # Check if it's been more than a day since last update
+        if datetime.now() - last_update_time > timedelta(days=1):
+            logger.info("Embeddings need to be updated")
             
-        if comment:
-            feedback_data["comment"] = comment
+            # Update product embeddings
+            await self.update_all_product_embeddings()
+            
+            # Update last update time
+            with open(last_update_path, "w") as f:
+                json.dump({"timestamp": datetime.now().isoformat()}, f)
+    
+    async def update_all_product_embeddings(self) -> int:
+        """Update embeddings for all products"""
+        if not self.initialized:
+            await self.initialize()
+            return 0  # initialize() already calls _check_and_update_embeddings when torch is available
         
-        await mongo_client.insert_one("recipeFeedback", feedback_data)
-        
-        # If it's a rating, update the recipe's average rating
-        if action == "rated" and rating is not None:
-            # Get all ratings for this recipe
-            all_ratings = await mongo_client.find_many(
-                "recipeFeedback",
-                {"recipeId": ObjectId(recipe_id), "action": "rated", "rating": {"$exists": True}}
+        try:
+            # Get all active products
+            products = await mongo_client.find_many(
+                "products",
+                {"isDeleted": {"$ne": True}}
             )
             
-            total_rating = sum(r["rating"] for r in all_ratings)
-            avg_rating = total_rating / len(all_ratings) if all_ratings else 0
+            logger.info(f"Updating embeddings for {len(products)} products")
             
-            # Update recipe with new average rating
-            await mongo_client.update_one(
-                "recipes",
-                {"_id": ObjectId(recipe_id)},
-                {"$set": {"avgRating": avg_rating, "ratingCount": len(all_ratings)}}
-            )
+            # Process products in batches
+            batch_size = 50
+            updated_count = 0
+            
+            for i in range(0, len(products), batch_size):
+                batch = products[i:i+batch_size]
+                
+                for product in batch:
+                    prod_id = str(product["_id"])
+                    
+                    # Get product text for embedding
+                    product_text = await self._get_product_text(product)
+                    
+                    # Generate embedding
+                    embedding = await self.embedding_model.get_embedding(product_text)
+                    
+                    # Store embedding
+                    self.product_embeddings[prod_id] = embedding
+                    
+                    # Cache product info
+                    self.product_info_cache[prod_id] = self._extract_product_info(product)
+                    
+                    updated_count += 1
+                
+                logger.info(f"Updated embeddings for {updated_count}/{len(products)} products")
+            
+            # Save embeddings to disk
+            os.makedirs(settings.EMBEDDINGS_PATH, exist_ok=True)
+            with open(os.path.join(settings.EMBEDDINGS_PATH, "product_embeddings.pkl"), "wb") as f:
+                pickle.dump(self.product_embeddings, f)
+            
+            logger.info(f"Successfully updated and saved embeddings for {updated_count} products")
+            return updated_count
         
+        except Exception as e:
+            logger.error(f"Error updating product embeddings: {str(e)}")
+            raise
+    
+    async def update_user_embedding(self, user_id: str) -> bool:
+        """Update embedding for a specific user"""
+        await self.initialize()
+        
+        try:
+            # Get user's browsing and purchase history
+            user_history = await self._get_user_history(user_id)
+            
+            if not user_history:
+                logger.warning(f"No history found for user {user_id}")
+                return False
+            
+            # Extract product IDs from history
+            product_ids = [item["productId"] for item in user_history]
+            
+            # Ensure all products have embeddings
+            for prod_id in product_ids:
+                if prod_id not in self.product_embeddings:
+                    # Get product from database
+                    product = await mongo_client.find_one(
+                        "products",
+                        {"_id": ObjectId(prod_id)}
+                    )
+                    
+                    if product:
+                        # Generate embedding
+                        product_text = await self._get_product_text(product)
+                        embedding = await self.embedding_model.get_embedding(product_text)
+                        
+                        # Store embedding
+                        self.product_embeddings[prod_id] = embedding
+                        
+                        # Cache product info
+                        self.product_info_cache[prod_id] = self._extract_product_info(product)
+            
+            # Generate user embedding based on history
+            # Use a weighted average of product embeddings based on recency and interaction type
+            user_embedding = np.zeros(self.embedding_model.embedding_dim)
+            total_weight = 0
+            
+            for item in user_history:
+                prod_id = item["productId"]
+                
+                if prod_id in self.product_embeddings:
+                    # Calculate weight based on interaction type and recency
+                    weight = self._calculate_interaction_weight(item)
+                    
+                    # Add weighted embedding
+                    user_embedding += weight * self.product_embeddings[prod_id]
+                    total_weight += weight
+            
+            if total_weight > 0:
+                # Normalize embedding
+                user_embedding /= total_weight
+                
+                # Store user embedding
+                self.user_embeddings[user_id] = user_embedding
+                
+                # Save user embeddings to disk
+                os.makedirs(settings.EMBEDDINGS_PATH, exist_ok=True)
+                with open(os.path.join(settings.EMBEDDINGS_PATH, "user_embeddings.pkl"), "wb") as f:
+                    pickle.dump(self.user_embeddings, f)
+                
+                logger.info(f"Successfully updated and saved embedding for user {user_id}")
+                return True
+            else:
+                logger.warning(f"Could not generate embedding for user {user_id} due to missing product embeddings")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Error updating user embedding: {str(e)}")
+            return False
+    
+    def _calculate_interaction_weight(self, interaction: Dict[str, Any]) -> float:
+        """Calculate weight for a user-product interaction"""
+        # Base weights by interaction type
+        type_weights = {
+            "view": 1.0,
+            "add_to_cart": 2.0,
+            "add_to_wishlist": 2.5,
+            "purchase": 5.0
+        }
+        
+        # Get base weight
+        base_weight = type_weights.get(interaction["type"], 1.0)
+        
+        # Apply recency weight
+        days_ago = (datetime.now() - interaction["timestamp"]).days
+        recency_weight = max(0.5, min(1.0, 1.0 - (days_ago / 30)))  # Decay over 30 days
+        
+        return base_weight * recency_weight
+    
+    async def _get_product_text(self, product: Dict[str, Any]) -> str:
+        """Generate text representation of a product for embedding"""
+        # Combine product information into a single text string
+        text_parts = []
+        
+        # Add product name
+        if "name" in product:
+            text_parts.append(f"Tên sản phẩm: {product['name']}")
+        
+        # Add product description
+        if "description" in product:
+            text_parts.append(f"Mô tả: {product['description']}")
+        
+        # Add category information
+        if "categoryId" in product:
+            # Get category name
+            category = await mongo_client.find_one(
+                "categories",
+                {"_id": product["categoryId"]}
+            )
+            
+            if category and "name" in category:
+                text_parts.append(f"Danh mục: {category['name']}")
+        
+        # Add material information
+        variant_info = ""
+        if "productVariants" in product and product["productVariants"]:
+            variant = product["productVariants"][0]  # Use first variant
+            
+            if "material" in variant:
+                variant_info += f"Chất liệu: {variant['material']}. "
+            
+            if "color" in variant:
+                variant_info += f"Màu sắc: {variant['color']}. "
+            
+            if "size" in variant:
+                variant_info += f"Kích thước: {variant['size']}. "
+        
+        if variant_info:
+            text_parts.append(variant_info)
+        
+        # Combine all text parts
+        return " ".join(text_parts)
+    
+    def _extract_product_info(self, product: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract relevant product information for recommendations"""
         return {
-            "success": True,
-            "message": "Feedback recorded successfully"
+            "id": str(product["_id"]),
+            "name": product.get("name", ""),
+            "description": product.get("description", "")[:100] + "..." if len(product.get("description", "")) > 100 else product.get("description", ""),
+            "price": product.get("basePrice", 0),
+            "image": product.get("images", [])[0] if product.get("images") else None,
+            "category_id": str(product.get("categoryId")) if product.get("categoryId") else None
         }
     
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logger.error(f"Error recording recipe feedback: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to record recipe feedback: {str(e)}"
+    async def _get_user_history(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get user's browsing and purchase history"""
+        history = []
+        
+        # Get view history
+        views = await mongo_client.find_many(
+            "productViews",
+            {"userId": ObjectId(user_id)},
+            sort=[("createdAt", -1)],
+            limit=50
         )
-
-# Helper functions for recipe recommendations
-
-async def get_popular_recipes(
-    limit: int = 10,
-    max_preparation_time: Optional[int] = None,
-    difficulty: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """Get popular recipes"""
-    # Build query
-    query = {}
-    
-    if max_preparation_time is not None:
-        query["preparationTime"] = {"$lte": max_preparation_time}
         
-    if difficulty:
-        query["difficulty"] = difficulty
-    
-    # Get recipes sorted by popularity metrics
-    recipes = await mongo_client.find_many(
-        "recipes",
-        query,
-        sort=[("avgRating", -1), ("viewCount", -1)],
-        limit=limit
-    )
-    
-    # Format response
-    return [format_recipe(recipe) for recipe in recipes]
-
-async def get_recipes_by_product(product_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """Get recipes that use a specific product"""
-    # Find recipe links for this product
-    recipe_links = await mongo_client.find_many(
-        "recipeProductLinks",
-        {"productId": ObjectId(product_id)}
-    )
-    
-    if not recipe_links:
-        return []
-    
-    # Extract recipe IDs
-    recipe_ids = [link["recipeId"] for link in recipe_links]
-    
-    # Get recipes
-    recipes = await mongo_client.find_many(
-        "recipes",
-        {"_id": {"$in": recipe_ids}},
-        sort=[("avgRating", -1)],
-        limit=limit
-    )
-    
-    # Format response
-    return [format_recipe(recipe) for recipe in recipes]
-
-async def get_recipes_by_ingredients(
-    ingredients: List[str],
-    limit: int = 10,
-    max_preparation_time: Optional[int] = None,
-    difficulty: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """Get recipes that use specific ingredients"""
-    # Build query
-    query = {"ingredients.name": {"$all": ingredients}}
-    
-    if max_preparation_time is not None:
-        query["preparationTime"] = {"$lte": max_preparation_time}
+        for view in views:
+            history.append({
+                "productId": str(view["productId"]),
+                "type": "view",
+                "timestamp": view["createdAt"]
+            })
         
-    if difficulty:
-        query["difficulty"] = difficulty
-    
-    # Get recipes
-    recipes = await mongo_client.find_many(
-        "recipes",
-        query,
-        sort=[("avgRating", -1)],
-        limit=limit
-    )
-    
-    # Format response
-    return [format_recipe(recipe) for recipe in recipes]
-
-async def get_recipes_by_cuisine(
-    cuisine_type: str,
-    limit: int = 10,
-    max_preparation_time: Optional[int] = None,
-    difficulty: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """Get recipes of a specific cuisine"""
-    # Build query
-    query = {"cuisineType": cuisine_type}
-    
-    if max_preparation_time is not None:
-        query["preparationTime"] = {"$lte": max_preparation_time}
+        # Get cart items
+        cart = await mongo_client.find_one(
+            "carts",
+            {"userId": ObjectId(user_id)}
+        )
         
-    if difficulty:
-        query["difficulty"] = difficulty
-    
-    # Get recipes
-    recipes = await mongo_client.find_many(
-        "recipes",
-        query,
-        sort=[("avgRating", -1)],
-        limit=limit
-    )
-    
-    # Format response
-    return [format_recipe(recipe) for recipe in recipes]
-
-async def get_personalized_recipes(
-    user_id: str,
-    limit: int = 10,
-    max_preparation_time: Optional[int] = None,
-    difficulty: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """Get personalized recipe recommendations for a user"""
-    # Get user's preferred ingredients and cuisines based on history
-    user_preferences = await get_user_recipe_preferences(user_id)
-    
-    # Get user's previously rated recipes
-    rated_recipes = await mongo_client.find_many(
-        "recipeFeedback",
-        {"userId": ObjectId(user_id), "action": "rated"}
-    )
-    
-    # Exclude recipes user has already rated or viewed many times
-    exclude_recipe_ids = []
-    for feedback in rated_recipes:
-        if feedback.get("rating", 0) < 3:  # Exclude low-rated recipes
-            exclude_recipe_ids.append(feedback["recipeId"])
-    
-    # Build query
-    query = {"_id": {"$nin": exclude_recipe_ids}}
-    
-    if max_preparation_time is not None:
-        query["preparationTime"] = {"$lte": max_preparation_time}
+        if cart and "items" in cart:
+            for item in cart["items"]:
+                history.append({
+                    "productId": str(item["productId"]),
+                    "type": "add_to_cart",
+                    "timestamp": item.get("updatedAt", datetime.now())
+                })
         
-    if difficulty:
-        query["difficulty"] = difficulty
-    
-    # Add preferred cuisine types if available
-    if user_preferences.get("cuisines"):
-        preferred_cuisines = user_preferences["cuisines"][:3]  # Top 3 cuisines
-        query["cuisineType"] = {"$in": preferred_cuisines}
-    
-    # Get recipes
-    recipes = await mongo_client.find_many(
-        "recipes",
-        query,
-        sort=[("avgRating", -1)],
-        limit=limit * 2  # Get more than needed for filtering
-    )
-    
-    # Sort recipes based on user preferences
-    scored_recipes = []
-    
-    for recipe in recipes:
-        score = 0
+        # Get wishlist items
+        wishlist = await mongo_client.find_many(
+            "wishlist",
+            {"userId": ObjectId(user_id)}
+        )
         
-        # Score based on preferred ingredients
-        if user_preferences.get("ingredients") and recipe.get("ingredients"):
-            recipe_ingredients = [ing["name"] for ing in recipe.get("ingredients", [])]
-            for ingredient in user_preferences["ingredients"]:
-                if ingredient in recipe_ingredients:
-                    score += 1
+        for item in wishlist:
+            history.append({
+                "productId": str(item["productId"]),
+                "type": "add_to_wishlist",
+                "timestamp": item.get("createdAt", datetime.now())
+            })
         
-        # Score based on difficulty preference
-        if user_preferences.get("preferred_difficulty") and recipe.get("difficulty"):
-            if recipe["difficulty"] == user_preferences["preferred_difficulty"]:
-                score += 2
+        # Get purchase history
+        orders = await mongo_client.find_many(
+            "orders",
+            {"userId": ObjectId(user_id)}
+        )
         
-        # Score based on preparation time preference
-        if user_preferences.get("avg_preparation_time") and recipe.get("preparationTime"):
-            user_avg_time = user_preferences["avg_preparation_time"]
-            recipe_time = recipe["preparationTime"]
+        for order in orders:
+            if "items" in order:
+                for item in order["items"]:
+                    history.append({
+                        "productId": str(item["productId"]),
+                        "type": "purchase",
+                        "timestamp": order.get("createdAt", datetime.now())
+                    })
+        
+        return history
+    
+    async def get_personalized_recommendations(
+        self, 
+        user_id: str, 
+        limit: int = 10,
+        include_viewed: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Get personalized product recommendations for a user"""
+        await self.initialize()
+        
+        try:
+            # Check if user embedding exists
+            if user_id not in self.user_embeddings:
+                # Try to generate it
+                success = await self.update_user_embedding(user_id)
+                
+                if not success:
+                    # Fall back to popular products
+                    logger.info(f"No embedding available for user {user_id}, falling back to popular products")
+                    return await self.get_popular_products(limit)
             
-            # Score higher if recipe time is close to user's preferred time
-            time_diff = abs(recipe_time - user_avg_time)
-            if time_diff <= 10:
-                score += 3
-            elif time_diff <= 20:
-                score += 2
-            elif time_diff <= 30:
-                score += 1
+            # Get user's previously viewed and purchased products
+            excluded_product_ids = set()
+            
+            if not include_viewed:
+                # Get product view history
+                views = await mongo_client.find_many(
+                    "productViews",
+                    {"userId": ObjectId(user_id)}
+                )
+                
+                for view in views:
+                    excluded_product_ids.add(str(view["productId"]))
+                
+                # Get purchase history
+                orders = await mongo_client.find_many(
+                    "orders",
+                    {"userId": ObjectId(user_id)}
+                )
+                
+                for order in orders:
+                    if "items" in order:
+                        for item in order["items"]:
+                            excluded_product_ids.add(str(item["productId"]))
+            
+            # Calculate similarity between user embedding and all product embeddings
+            user_embedding = self.user_embeddings[user_id]
+            
+            # Calculate similarities and rank products
+            similarities = []
+            
+            for prod_id, embedding in self.product_embeddings.items():
+                # Skip excluded products
+                if prod_id in excluded_product_ids:
+                    continue
+                
+                # Calculate cosine similarity
+                similarity = cosine_similarity([user_embedding], [embedding])[0][0]
+                
+                similarities.append((prod_id, similarity))
+            
+            # Sort by similarity (descending)
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            
+            # Get top recommendations
+            top_recommendations = similarities[:limit]
+            
+            # Fetch product details
+            recommendations = []
+            
+            for prod_id, similarity in top_recommendations:
+                if prod_id in self.product_info_cache:
+                    product_info = self.product_info_cache[prod_id]
+                    product_info["similarity_score"] = float(similarity)
+                    recommendations.append(product_info)
+                else:
+                    # Get product from database
+                    product = await mongo_client.find_one(
+                        "products",
+                        {"_id": ObjectId(prod_id)}
+                    )
+                    
+                    if product:
+                        product_info = self._extract_product_info(product)
+                        product_info["similarity_score"] = float(similarity)
+                        recommendations.append(product_info)
+                        
+                        # Update cache
+                        self.product_info_cache[prod_id] = product_info
+            
+            return recommendations
         
-        # Add base score for highly rated recipes
-        score += recipe.get("avgRating", 0) * 2
+        except Exception as e:
+            logger.error(f"Error getting personalized recommendations: {str(e)}")
+            # Fall back to popular products
+            return await self.get_popular_products(limit)
+    
+    async def get_similar_products(self, product_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get products similar to a given product"""
+        await self.initialize()
         
-        scored_recipes.append((recipe, score))
-    
-    # Sort by score (descending)
-    scored_recipes.sort(key=lambda x: x[1], reverse=True)
-    
-    # Format response with top recipes
-    return [format_recipe(recipe) for recipe, _ in scored_recipes[:limit]]
-
-async def get_user_recipe_preferences(user_id: str) -> Dict[str, Any]:
-    """Analyze user's recipe interactions to determine preferences"""
-    # Get user's recipe feedback
-    feedback = await mongo_client.find_many(
-        "recipeFeedback",
-        {"userId": ObjectId(user_id)}
-    )
-    
-    if not feedback:
-        return {}
-    
-    # Extract recipe IDs with positive feedback
-    positive_recipe_ids = []
-    for item in feedback:
-        if item["action"] == "rated" and item.get("rating", 0) >= 4:
-            positive_recipe_ids.append(item["recipeId"])
-        elif item["action"] in ["favorited", "cooked"]:
-            positive_recipe_ids.append(item["recipeId"])
-    
-    if not positive_recipe_ids:
-        return {}
-    
-    # Get the positively rated recipes
-    positive_recipes = await mongo_client.find_many(
-        "recipes",
-        {"_id": {"$in": positive_recipe_ids}}
-    )
-    
-    if not positive_recipes:
-        return {}
-    
-    # Analyze preferences
-    ingredient_counts = {}
-    cuisine_counts = {}
-    difficulty_counts = {}
-    preparation_times = []
-    
-    for recipe in positive_recipes:
-        # Count ingredients
-        for ingredient in recipe.get("ingredients", []):
-            ingredient_name = ingredient["name"]
-            ingredient_counts[ingredient_name] = ingredient_counts.get(ingredient_name, 0) + 1
+        try:
+            # Check if product embedding exists
+            if product_id not in self.product_embeddings:
+                # Get product from database
+                product = await mongo_client.find_one(
+                    "products",
+                    {"_id": ObjectId(product_id)}
+                )
+                
+                if not product:
+                    logger.warning(f"Product {product_id} not found")
+                    return []
+                
+                # Generate embedding
+                product_text = await self._get_product_text(product)
+                embedding = await self.embedding_model.get_embedding(product_text)
+                
+                # Store embedding
+                self.product_embeddings[product_id] = embedding
+                
+                # Cache product info
+                self.product_info_cache[product_id] = self._extract_product_info(product)
+            
+            # Calculate similarity between product embedding and all other product embeddings
+            product_embedding = self.product_embeddings[product_id]
+            
+            # Calculate similarities and rank products
+            similarities = []
+            
+            for prod_id, embedding in self.product_embeddings.items():
+                # Skip the input product
+                if prod_id == product_id:
+                    continue
+                
+                # Calculate cosine similarity
+                similarity = cosine_similarity([product_embedding], [embedding])[0][0]
+                
+                similarities.append((prod_id, similarity))
+            
+            # Sort by similarity (descending)
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            
+            # Get top similar products
+            top_similar = similarities[:limit]
+            
+            # Fetch product details
+            similar_products = []
+            
+            for prod_id, similarity in top_similar:
+                if prod_id in self.product_info_cache:
+                    product_info = self.product_info_cache[prod_id]
+                    product_info["similarity_score"] = float(similarity)
+                    similar_products.append(product_info)
+                else:
+                    # Get product from database
+                    product = await mongo_client.find_one(
+                        "products",
+                        {"_id": ObjectId(prod_id)}
+                    )
+                    
+                    if product:
+                        product_info = self._extract_product_info(product)
+                        product_info["similarity_score"] = float(similarity)
+                        similar_products.append(product_info)
+                        
+                        # Update cache
+                        self.product_info_cache[prod_id] = product_info
+            
+            return similar_products
         
-        # Count cuisines
-        cuisine = recipe.get("cuisineType")
-        if cuisine:
-            cuisine_counts[cuisine] = cuisine_counts.get(cuisine, 0) + 1
+        except Exception as e:
+            logger.error(f"Error getting similar products: {str(e)}")
+            return []
+    
+    async def get_popular_products(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get popular products"""
+        await self.initialize()
         
-        # Count difficulties
-        difficulty = recipe.get("difficulty")
-        if difficulty:
-            difficulty_counts[difficulty] = difficulty_counts.get(difficulty, 0) + 1
+        try:
+            # Query for popular products based on views, orders, and ratings
+            # In a real implementation, this would be more sophisticated
+            
+            # Aggregate product views
+            view_counts = await mongo_client.aggregate(
+                "productViews",
+                [
+                    {"$group": {"_id": "$productId", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": limit * 2}  # Get more than needed to filter out inactive
+                ]
+            )
+            
+            # Get product details for popular products
+            popular_products = []
+            
+            for view in view_counts:
+                prod_id = str(view["_id"])
+                
+                # Check product info cache
+                if prod_id in self.product_info_cache:
+                    product_info = self.product_info_cache[prod_id]
+                    product_info["popularity_score"] = view["count"]
+                    popular_products.append(product_info)
+                else:
+                    # Get product from database
+                    product = await mongo_client.find_one(
+                        "products",
+                        {"_id": view["_id"], "isDeleted": {"$ne": True}}
+                    )
+                    
+                    if product:
+                        product_info = self._extract_product_info(product)
+                        product_info["popularity_score"] = view["count"]
+                        popular_products.append(product_info)
+                        
+                        # Update cache
+                        self.product_info_cache[prod_id] = product_info
+            
+            # Limit results
+            return popular_products[:limit]
         
-        # Track preparation times
-        if recipe.get("preparationTime"):
-            preparation_times.append(recipe["preparationTime"])
+        except Exception as e:
+            logger.error(f"Error getting popular products: {str(e)}")
+            
+            # Fallback to recent products if aggregation fails
+            products = await mongo_client.find_many(
+                "products",
+                {"isDeleted": {"$ne": True}},
+                sort=[("createdAt", -1)],
+                limit=limit
+            )
+            
+            return [self._extract_product_info(product) for product in products]
     
-    # Determine preferred ingredients (sorted by frequency)
-    preferred_ingredients = sorted(ingredient_counts.keys(), key=lambda x: ingredient_counts[x], reverse=True)
+    async def get_category_recommendations(self, category_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recommendations for a specific category"""
+        await self.initialize()
+        
+        try:
+            # Get popular products in category
+            products = await mongo_client.find_many(
+                "products",
+                {"categoryId": ObjectId(category_id), "isDeleted": {"$ne": True}},
+                limit=limit * 2  # Get more than needed
+            )
+            
+            # Get product view counts for sorting
+            product_ids = [product["_id"] for product in products]
+            
+            view_counts = await mongo_client.aggregate(
+                "productViews",
+                [
+                    {"$match": {"productId": {"$in": product_ids}}},
+                    {"$group": {"_id": "$productId", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}}
+                ]
+            )
+            
+            # Create view count map
+            view_count_map = {str(view["_id"]): view["count"] for view in view_counts}
+            
+            # Sort products by view count
+            products_with_counts = [
+                (product, view_count_map.get(str(product["_id"]), 0))
+                for product in products
+            ]
+            
+            products_with_counts.sort(key=lambda x: x[1], reverse=True)
+            
+            # Extract product info
+            recommendations = []
+            
+            for product, view_count in products_with_counts[:limit]:
+                prod_id = str(product["_id"])
+                
+                if prod_id in self.product_info_cache:
+                    product_info = self.product_info_cache[prod_id]
+                else:
+                    product_info = self._extract_product_info(product)
+                    self.product_info_cache[prod_id] = product_info
+                
+                product_info["popularity_score"] = view_count
+                recommendations.append(product_info)
+            
+            return recommendations
+        
+        except Exception as e:
+            logger.error(f"Error getting category recommendations: {str(e)}")
+            return []
     
-    # Determine preferred cuisines (sorted by frequency)
-    preferred_cuisines = sorted(cuisine_counts.keys(), key=lambda x: cuisine_counts[x], reverse=True)
-    
-    # Determine preferred difficulty
-    preferred_difficulty = max(difficulty_counts.items(), key=lambda x: x[1])[0] if difficulty_counts else None
-    
-    # Calculate average preparation time
-    avg_preparation_time = sum(preparation_times) / len(preparation_times) if preparation_times else None
-    
-    return {
-        "ingredients": preferred_ingredients,
-        "cuisines": preferred_cuisines,
-        "preferred_difficulty": preferred_difficulty,
-        "avg_preparation_time": avg_preparation_time
-    }
-
-def format_recipe(recipe: Dict[str, Any]) -> Dict[str, Any]:
-    """Format recipe data for API response"""
-    return {
-        "id": str(recipe["_id"]),
-        "title": recipe.get("title", ""),
-        "description": recipe.get("description", ""),
-        "preparationTime": recipe.get("preparationTime", 0),
-        "difficulty": recipe.get("difficulty", "medium"),
-        "instructions": recipe.get("instructions", []),
-        "ingredients": recipe.get("ingredients", []),
-        "cuisineType": recipe.get("cuisineType", ""),
-        "avgRating": recipe.get("avgRating", 0),
-        "ratingCount": recipe.get("ratingCount", 0),
-        "image": recipe.get("image", "")
-    }
+    async def get_keyword_recommendations(self, keywords: List[str], limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recommendations based on keywords"""
+        await self.initialize()
+        
+        try:
+            # Generate an embedding for the keywords
+            keyword_text = " ".join(keywords)
+            keyword_embedding = await self.embedding_model.get_embedding(keyword_text)
+            
+            # Calculate similarity between keyword embedding and all product embeddings
+            similarities = []
+            
+            for prod_id, embedding in self.product_embeddings.items():
+                # Calculate cosine similarity
+                similarity = cosine_similarity([keyword_embedding], [embedding])[0][0]
+                
+                similarities.append((prod_id, similarity))
+            
+            # Sort by similarity (descending)
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            
+            # Get top recommendations
+            top_recommendations = similarities[:limit]
+            
+            # Fetch product details
+            recommendations = []
+            
+            for prod_id, similarity in top_recommendations:
+                if prod_id in self.product_info_cache:
+                    product_info = self.product_info_cache[prod_id]
+                    product_info["similarity_score"] = float(similarity)
+                    recommendations.append(product_info)
+                else:
+                    # Get product from database
+                    product = await mongo_client.find_one(
+                        "products",
+                        {"_id": ObjectId(prod_id)}
+                    )
+                    
+                    if product:
+                        product_info = self._extract_product_info(product)
+                        product_info["similarity_score"] = float(similarity)
+                        recommendations.append(product_info)
+                        
+                        # Update cache
+                        self.product_info_cache[prod_id] = product_info
+            
+            return recommendations
+        
+        except Exception as e:
+            logger.error(f"Error getting keyword recommendations: {str(e)}")
+            return []

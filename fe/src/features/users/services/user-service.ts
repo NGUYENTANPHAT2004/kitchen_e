@@ -7,7 +7,6 @@ import type {
   UserListResponse,
   UpdateUserRequest,
   UserStats,
-  ChangeRoleRequest
 } from '../interfaces/interface';
 
 class UserService {
@@ -39,10 +38,11 @@ class UserService {
       if (params.sortBy) searchParams.append('sort', `${params.sortOrder === 'desc' ? '-' : ''}${params.sortBy}`);
       
       const response = await api.get(`${this.baseUrl}?${searchParams.toString()}`);
-      
+
       // Process response data
-      const users = response.data.users || [];
-      const pagination = response.data.pagination || {
+      const data = response.data.data ?? response.data;
+      const users = data.users || [];
+      const pagination = data.pagination || {
         currentPage: 1,
         totalPages: 1,
         totalItems: 0,
@@ -88,9 +88,8 @@ class UserService {
   async getUserById(id: string): Promise<{ user: User }> {
     try {
       const response = await api.get(`${this.baseUrl}/${id}`);
-      return {
-        user: this.transformUser(response.data.user)
-      };
+      const data = response.data.data ?? response.data;
+      return { user: this.transformUser(data.user) };
     } catch (error) {
       console.error('Failed to fetch user:', error);
       throw error;
@@ -103,9 +102,8 @@ class UserService {
   async updateUser(id: string, data: UpdateUserRequest): Promise<{ user: User }> {
     try {
       const response = await api.put(`${this.baseUrl}/${id}`, data);
-      return {
-        user: this.transformUser(response.data.user)
-      };
+      const d = response.data.data ?? response.data;
+      return { user: this.transformUser(d.user) };
     } catch (error) {
       console.error('Failed to update user:', error);
       throw error;
@@ -117,10 +115,9 @@ class UserService {
    */
   async changeUserRole(id: string, role: User['role']): Promise<{ user: User }> {
     try {
-      const response = await api.put(`${this.baseUrl}/${id}/role`, { role });
-      return {
-        user: this.transformUser(response.data.user)
-      };
+      const response = await api.put(`${this.baseUrl}/${id}`, { role });
+      const d = response.data.data ?? response.data;
+      return { user: this.transformUser(d.user) };
     } catch (error) {
       console.error('Failed to change user role:', error);
       throw error;
@@ -145,9 +142,8 @@ class UserService {
   async restoreUser(id: string): Promise<{ user: User }> {
     try {
       const response = await api.put(`${this.baseUrl}/${id}/restore`);
-      return {
-        user: this.transformUser(response.data.user)
-      };
+      const d = response.data.data ?? response.data;
+      return { user: this.transformUser(d.user) };
     } catch (error) {
       console.error('Failed to restore user:', error);
       throw error;
@@ -160,7 +156,24 @@ class UserService {
   async getUserStats(): Promise<UserStats> {
     try {
       const response = await api.get(`${this.baseUrl}/stats`);
-      return response.data;
+      const d = response.data?.data ?? response.data ?? {};
+      const roles = d.usersByRole ?? {};
+      const providers = d.usersByProvider ?? {};
+      return {
+        totalUsers: d.totalUsers ?? 0,
+        activeUsers: d.totalUsers ?? 0,
+        newUsersThisMonth: d.newUsers ?? 0,
+        usersByRole: {
+          customer: roles.customer ?? 0,
+          staff: roles.staff ?? 0,
+          admin: roles.admin ?? 0,
+        },
+        usersByProvider: {
+          local: providers.local ?? 0,
+          google: providers.google ?? 0,
+          facebook: providers.facebook ?? 0,
+        },
+      };
     } catch (error) {
       console.error('Failed to fetch user stats:', error);
       throw error;
@@ -173,9 +186,8 @@ class UserService {
   async searchUsers(query: string, limit = 10): Promise<{ users: User[] }> {
     try {
       const response = await api.get(`${this.baseUrl}/search?query=${encodeURIComponent(query)}&limit=${limit}`);
-      return {
-        users: response.data.users.map(this.transformUser)
-      };
+      const d = response.data.data ?? response.data;
+      return { users: (d.users ?? []).map(this.transformUser) };
     } catch (error) {
       console.error('Failed to search users:', error);
       throw error;

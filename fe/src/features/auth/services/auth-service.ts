@@ -122,12 +122,12 @@ class AuthService {
 
     this.lastFetchTime = now;
     try {
-      const response = await api.get<{ user: User }>(`${AUTH_BASE}/me`);
-      const user = response.data.user;
+      const response = await api.get<{ data: { user: User } }>(`${AUTH_BASE}/me`);
+      const user = response.data.data?.user;
       if (!user?._id || !user?.email) throw new Error('Invalid user data from API');
       this.userCache = user;
       AuthService.setUserData(user);
-      return response.data;
+      return { user };
     } catch (error: any) {
       if (error.response?.status === 401) {
         this.clearAuthData();
@@ -166,12 +166,15 @@ class AuthService {
 
   async register(data: RegisterRequest): Promise<RegisterResponse> {
     const response = await api.post<RegisterResponse>(`${AUTH_BASE}/register`, data);
-    const { token, user } = response.data;
+    const token = response.data.token;
+    const user = response.data.user ?? (response.data as any).data?.user;
 
     if (token) {
       localStorage.setItem('token', token);
-      AuthService.setUserData(user);
-      this.userCache = user;
+      if (user) {
+        AuthService.setUserData(user);
+        this.userCache = user;
+      }
     }
 
     return response.data;
@@ -188,10 +191,12 @@ class AuthService {
   }
 
   async updateUserProfile(data: UpdateUserRequest): Promise<{ user: User }> {
-    const response = await api.put<{ user: User }>(`${AUTH_BASE}/me`, data);
-    this.userCache = response.data.user;
-    AuthService.setUserData(response.data.user);
-    return response.data;
+    const response = await api.put<{ data: { user: User } }>(`${AUTH_BASE}/me`, data);
+    const user = response.data.data?.user;
+    if (!user) throw new Error('Invalid response from server');
+    this.userCache = user;
+    AuthService.setUserData(user);
+    return { user };
   }
 
   async updatePassword(data: UpdatePasswordRequest): Promise<LoginResponse> {

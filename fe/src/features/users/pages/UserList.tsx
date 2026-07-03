@@ -14,7 +14,7 @@ import {
   UserFiltersComponent,
   RoleChangeModal 
 } from '../components/dashboard';
-import type { User } from '../../../types/user';
+import type { User } from '../interfaces/interface';
 import { useUsers } from '../hooks/useUsers';
 
 const UserList: React.FC = () => {

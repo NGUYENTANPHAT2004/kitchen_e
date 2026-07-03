@@ -25,54 +25,18 @@ export const useCategory = (id: string) => {
 export const categoryUtils = {
   // Build tree structure for TreeSelect component
   buildTreeSelectData(categories: Category[], excludeId?: string): any[] {
-    try {
-      if (!Array.isArray(categories)) {
-        console.log('buildTreeSelectData: categories is not an array');
-        return [];
-      }
-      
-      const validCategories = categories.filter(cat => {
-        if (!cat || typeof cat !== 'object') return false;
-        if (!cat._id || !cat.name) return false;
-        if (cat.isDeleted) return false;
-        if (cat._id === excludeId) return false;
-        if (!cat.isActive) return false;
-        return true;
-      });
-      
-      console.log(`buildTreeSelectData: Processing ${validCategories.length} valid categories`);
-      
-      const categoryMap = new Map();
-      const treeData: any[] = [];
-
-      // Build category map
-      validCategories.forEach(category => {
-        categoryMap.set(category._id, {
-          title: category.name,
-          value: category._id,
-          children: []
+    const buildNodes = (cats: any[]): any[] => {
+      return cats
+        .filter(cat => cat?._id && cat.name && cat.isActive && !cat.isDeleted && cat._id !== excludeId)
+        .map(cat => {
+          const children = cat.children || cat.subcategories || [];
+          const node: any = { title: cat.name, value: cat._id };
+          const childNodes = buildNodes(children);
+          if (childNodes.length > 0) node.children = childNodes;
+          return node;
         });
-      });
-
-      // Build tree structure
-      validCategories.forEach(category => {
-        const node = categoryMap.get(category._id);
-        if (node && category.parentId && categoryMap.has(category.parentId)) {
-          const parent = categoryMap.get(category.parentId);
-          if (parent) {
-            parent.children.push(node);
-          }
-        } else if (node) {
-          treeData.push(node);
-        }
-      });
-
-      console.log(`buildTreeSelectData: Built tree with ${treeData.length} root nodes`);
-      return treeData;
-    } catch (error) {
-      console.error('Error building tree select data:', error);
-      return [];
-    }
+    };
+    return buildNodes(categories);
   },
 
   // Build flat list for Select component
@@ -104,8 +68,9 @@ export const categoryUtils = {
               level
             });
             
-            if (cat.subcategories && Array.isArray(cat.subcategories)) {
-              result = result.concat(flattenCategories(cat.subcategories, level + 1));
+        const children = (cat as any).children || cat.subcategories;
+            if (children && Array.isArray(children)) {
+              result = result.concat(flattenCategories(children, level + 1));
             }
           }
         });
@@ -136,9 +101,8 @@ export const categoryUtils = {
         return [];
       }
       
-      // If categories already have subcategories populated, return as is
-      if (categories.length > 0 && categories[0]?.subcategories !== undefined) {
-        console.log('buildCategoryTree: Categories already have subcategories');
+      // If categories already have children/subcategories populated, return as is
+      if (categories.length > 0 && ((categories[0] as any).children !== undefined || categories[0]?.subcategories !== undefined)) {
         return categories;
       }
 
