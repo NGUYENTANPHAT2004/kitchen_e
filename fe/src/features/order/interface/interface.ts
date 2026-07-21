@@ -16,9 +16,11 @@ export interface Order {
   items: OrderItem[];
   shippingAddress?: {
     fullName: string;
-    street: string;
+    address: string;
     city: string;
-    province: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
     phone: string;
   };
   paymentStatus: 'paid' | 'unpaid' | 'refunded';
@@ -47,27 +49,23 @@ export interface ShippingForm {
 }
 
 export interface VoucherResult {
+  voucherId: string;
   discountAmount: number;
   voucherCode: string;
 }
 export interface OrderPayload {
-  items: { productId: string; variantId?: string; quantity: number; price: number }[];
   shippingAddress: {
     fullName: string;
-    street: string;
+    address: string;
     city: string;
-    province: string;
-    zipCode?: string;
+    state?: string;
+    postalCode?: string;
     country?: string;
     phone: string;
   };
   paymentMethod: string;
   shippingMethod: string;
-  shippingFee: number;
-  voucherCode?: string;
-  discountAmount?: number;
-  totalAmount: number;
-  customerEmail?: string;
+  voucherId?: string;
 }
 
 export interface AdminOrderParams {

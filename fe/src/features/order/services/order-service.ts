@@ -18,7 +18,12 @@ const orderService = {
   },
 
   async createOrder(payload: OrderPayload): Promise<{ _id: string; orderNumber: string }> {
-    const res = await api.post('/orders', payload);
+    const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `order-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const res = await api.post('/orders', payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
     const d = res.data.data ?? res.data;
     return d.order ?? d;
   },
@@ -46,10 +51,15 @@ const orderService = {
     };
   },
 
-  async applyVoucher(code: string, orderAmount: number): Promise<VoucherResult> {
-    const res = await api.post('/vouchers/apply', { code, orderAmount });
+  async applyVoucher(code: string): Promise<VoucherResult> {
+    const res = await api.post('/vouchers/apply', { code });
     const d = res.data.data ?? res.data;
-    return { discountAmount: d.discountAmount ?? 0, voucherCode: code };
+    const voucher = d.voucher ?? {};
+    return {
+      voucherId: voucher._id,
+      discountAmount: voucher.discountAmount ?? 0,
+      voucherCode: voucher.code ?? code,
+    };
   },
 };
 

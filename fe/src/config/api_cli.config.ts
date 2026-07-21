@@ -133,7 +133,7 @@ export const uploadUtils = {
   },
 
   createFormData(
-    data: Record<string, unknown>,
+    data: object,
     files?: File | File[],
     fileFieldName = 'images'
   ): FormData {

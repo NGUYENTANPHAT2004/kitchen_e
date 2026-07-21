@@ -1,6 +1,6 @@
 // src/features/auth/components/Register/RegisterForm.tsx
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/auth-hook';
 import type { RegisterRequest } from '../../interfaces/auth-interfaces';
 import AuthLayout from '../AuthLayout';

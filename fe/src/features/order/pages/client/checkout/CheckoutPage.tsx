@@ -150,7 +150,7 @@ const CheckoutPage: React.FC = () => {
                       <span className="block font-medium">Nhanh</span>
                       <span className="block text-sm text-gray-500">1-2 ngày làm việc</span>
                     </div>
-                    <span className="font-medium">150.000₫</span>
+                    <span className="font-medium">50.000₫</span>
                   </label>
                 </div>
               </div>

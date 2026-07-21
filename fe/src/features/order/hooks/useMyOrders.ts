@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import orderService from '../services/order-service';
-import type { Order } from '../interface/interface';
 
 export const useMyOrders = () => {
   const queryClient = useQueryClient();

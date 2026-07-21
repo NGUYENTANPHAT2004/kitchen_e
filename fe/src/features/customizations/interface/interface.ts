@@ -39,14 +39,3 @@ export interface CustomizationOption {
     isActive: boolean;
     removeOptionImages?: string[];
   }
-  interface ProductUI {
-  id: string;
-  name: string;
-  image?: string;
-  basePrice: number;
-  sku: string;
-  stock: number;
-  category: string;
-  variants?: Array<{ id: string; name: string; price: number; stock: number }>;
-}
-  

@@ -3,14 +3,16 @@ const Order = require('../models/Order');
 const OrderItem = require('../models/OrderItem');
 const Cart = require('../models/Cart');
 const CartItem = require('../models/CartItem');
-const Product = require('../models/Product');
-const ProductVariant = require('../models/ProductVariant');
-const FlashSaleItem = require('../models/FlashSaleItem');
 const Payment = require('../models/Payment');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../middlewares/async.middleware');
 const mongoose = require('mongoose');
+const inventoryService = require('../services/inventory.service');
+const voucherService = require('../services/voucher.service');
+const pricingService = require('../services/pricing.service');
+const idempotencyService = require('../services/idempotency.service');
+const orderCancellationService = require('../services/order-cancellation.service');
 
 /**
  * @desc    Create a new order
@@ -24,16 +26,15 @@ exports.createOrder = asyncHandler(async (req, res) => {
     paymentMethod,
     cartId,
     voucherId,
+    voucherCode,
     notes,
     shippingMethod = 'standard'
   } = req.body;
-  
-  // Validate required fields
+
   if (!shippingAddress || !paymentMethod) {
     throw new ApiError('Shipping address and payment method are required', 400);
   }
-  
-  // Validate shipping address
+
   if (
     !shippingAddress.fullName ||
     !shippingAddress.phone ||
@@ -42,151 +43,166 @@ exports.createOrder = asyncHandler(async (req, res) => {
   ) {
     throw new ApiError('Incomplete shipping address', 400);
   }
-  
-  // Find the cart
-  const cart = await Cart.findById(cartId || req.user.cartId);
-  if (!cart || cart.userId.toString() !== req.user._id.toString()) {
-    throw new ApiError('Cart not found or does not belong to you', 404);
+
+  if (!['standard', 'express'].includes(shippingMethod)) {
+    throw new ApiError('Invalid shipping method', 400);
   }
-  
-  // Get cart items
-  const cartItems = await CartItem.find({ cartId: cart._id })
-    .populate('productId')
-    .populate('variantId')
-    .populate({
-      path: 'flashSaleItemId',
-      populate: 'flashSaleId'
-    });
-  
-  if (!cartItems || cartItems.length === 0) {
-    throw new ApiError('Cart is empty', 400);
+
+  const idempotency = await idempotencyService.begin({
+    scope: 'create-order',
+    key: req.get('Idempotency-Key') || req.body.idempotencyKey,
+    ownerId: req.user._id,
+    payload: req.body
+  });
+  if (idempotency.replay) {
+    return res.status(idempotency.statusCode).json(idempotency.responseBody);
   }
-  
-  // Verify all items are still available
-  for (const item of cartItems) {
-    // Check if product is still available
-    if (!item.productId || item.productId.isDeleted) {
-      throw new ApiError(`Product ${item.productId ? item.productId.name : 'unknown'} is no longer available`, 400);
-    }
-    
-    // Check stock
-    const stockQuantity = item.variantId 
-      ? item.variantId.stockQuantity 
-      : item.productId.stockQuantity;
-    
-    if (stockQuantity < item.quantity) {
-      throw new ApiError(`Only ${stockQuantity} units of ${item.productId.name} ${item.variantId ? `(${item.variantId.name})` : ''} available`, 400);
-    }
-    
-    // Check flash sale if applicable
-    if (item.flashSaleItemId) {
-      const now = new Date();
-      const flashSale = item.flashSaleItemId.flashSaleId;
-      
-      if (!flashSale || now < flashSale.startDate || now > flashSale.endDate) {
-        throw new ApiError(`Flash sale for ${item.productId.name} is no longer active`, 400);
-      }
-      
-      if (item.flashSaleItemId.remainingQuantity < item.quantity) {
-        throw new ApiError(`Flash sale for ${item.productId.name} only has ${item.flashSaleItemId.remainingQuantity} units left`, 400);
-      }
-    }
-  }
-  
-  // Start a transaction
+
   const session = await mongoose.startSession();
   session.startTransaction();
-  
+  let transactionCommitted = false;
+
   try {
-    // Calculate totals
-    let subtotal = 0;
-    let shippingCost = 0;
-    let tax = 0;
-    let discount = 0;
-    
-    // Calculate shipping cost based on method and items
-    if (shippingMethod === 'express') {
-      shippingCost = 50000; // 50K VND for express shipping
-    } else if (shippingMethod === 'standard') {
-      shippingCost = 30000; // 30K VND for standard shipping
+    const cart = cartId
+      ? await Cart.findById(cartId).session(session)
+      : await Cart.findOne({ userId: req.user._id, status: 'active' }).session(session);
+
+    if (!cart || cart.userId.toString() !== req.user._id.toString()) {
+      throw new ApiError('Cart not found or does not belong to you', 404);
     }
-    
-    // Apply free shipping for orders over 500K VND
-    if (cart.subtotal >= 500000) {
-      shippingCost = 0;
+
+    const cartItems = await CartItem.find({ cartId: cart._id })
+      .session(session)
+      .populate('productId')
+      .populate('variantId')
+      .populate({
+        path: 'flashSaleItemId',
+        populate: 'flashSaleId'
+      });
+
+    if (cartItems.length === 0) {
+      throw new ApiError('Cart is empty', 400);
     }
-    
-    // Create order
-    const order = await Order.create([{
+
+    for (const item of cartItems) {
+      if (!item.productId || item.productId.isDeleted) {
+        throw new ApiError(
+          `Product ${item.productId ? item.productId.name : 'unknown'} is no longer available`,
+          409
+        );
+      }
+
+      const stockQuantity = item.variantId
+        ? item.variantId.stockQuantity
+        : item.productId.stockQuantity;
+      if (stockQuantity < item.quantity) {
+        throw new ApiError(
+          `Only ${stockQuantity} units of ${item.productId.name} available`,
+          409
+        );
+      }
+
+      if (item.flashSaleItemId) {
+        const now = new Date();
+        const flashSale = item.flashSaleItemId.flashSaleId;
+        if (
+          !flashSale ||
+          flashSale.status !== 'active' ||
+          flashSale.isActive === false ||
+          now < flashSale.startDate ||
+          now > flashSale.endDate ||
+          item.flashSaleItemId.remainingQuantity < item.quantity
+        ) {
+          throw new ApiError('A flash sale item is no longer available.', 409);
+        }
+      }
+    }
+
+    const pricedCart = pricingService.priceCartItems(cartItems);
+    const voucherItems = pricedCart.lines.map(({ item, lineTotal }) => ({
+      ...(typeof item.toObject === 'function' ? item.toObject() : item),
+      lineTotal
+    }));
+    const subtotal = pricedCart.subtotal;
+    let shippingCost = shippingMethod === 'express' ? 50000 : 30000;
+    const tax = 0;
+    if (subtotal >= 500000) shippingCost = 0;
+
+    const voucherValidation = await voucherService.validateVoucher({
+      voucherId,
+      code: voucherCode,
+      userId: req.user._id,
+      cartTotal: subtotal,
+      cartItems: voucherItems,
+      session
+    });
+    const discount = voucherValidation?.discountAmount || 0;
+
+    const [createdOrder] = await Order.create([{
       userId: req.user._id,
       status: 'pending',
       shippingAddress,
       billingAddress: billingAddress || shippingAddress,
       paymentMethod,
-      subtotal: cart.subtotal,
+      subtotal,
       shippingCost,
       tax,
       discount,
-      totalAmount: cart.subtotal + shippingCost + tax - discount,
-      isPaid: paymentMethod === 'cod' ? false : false,
-      voucherId: voucherId || null,
+      totalAmount: subtotal + shippingCost + tax - discount,
+      isPaid: false,
+      voucherId: voucherValidation?.voucher._id || null,
       notes: notes || '',
       shippingMethod
     }], { session });
-    
-    // Create order items from cart items
-    const orderItems = [];
-    
-    for (const item of cartItems) {
-      // Check if we need to update product stock
-      const product = item.productId;
-      const variant = item.variantId;
-      
-      // Update stock
-      if (variant) {
-        variant.stockQuantity -= item.quantity;
-        await variant.save({ session });
-      } else {
-        product.stockQuantity -= item.quantity;
-        await product.save({ session });
-      }
-      
-      // Update flash sale remaining quantity if applicable
-      if (item.flashSaleItemId) {
-        item.flashSaleItemId.usedQuantity += item.quantity;
-        item.flashSaleItemId.remainingQuantity = 
-          Math.max(0, item.flashSaleItemId.totalQuantity - item.flashSaleItemId.usedQuantity);
-        
-        await item.flashSaleItemId.save({ session });
-      }
-      
-      // Create order item
-      const orderItem = await OrderItem.create([{
-        orderId: order[0]._id,
+
+    for (let index = 0; index < cartItems.length; index += 1) {
+      const item = cartItems[index];
+      const line = pricedCart.lines[index];
+
+      await inventoryService.reserveProductStock({
         productId: item.productId._id,
         variantId: item.variantId ? item.variantId._id : null,
         quantity: item.quantity,
-        price: item.price,
-        discount: 0, // Individual item discount
+        session
+      });
+
+      if (item.flashSaleItemId) {
+        await inventoryService.reserveFlashSaleStock({
+          flashSaleItemId: item.flashSaleItemId._id,
+          quantity: item.quantity,
+          session
+        });
+      }
+
+      await OrderItem.create([{
+        orderId: createdOrder._id,
+        productId: item.productId._id,
+        variantId: item.variantId ? item.variantId._id : null,
+        quantity: item.quantity,
+        price: line.unitPrice,
+        discount: 0,
         flashSaleItemId: item.flashSaleItemId ? item.flashSaleItemId._id : null,
         customizations: item.customizations || {},
         notes: item.notes || ''
       }], { session });
-      
-      orderItems.push(orderItem[0]);
-      
-      // Remove item from cart
+
       await CartItem.findByIdAndDelete(item._id, { session });
     }
-    
-    // Recalculate order totals
-    const createdOrder = order[0];
-    await createdOrder.calculateTotals();
-    
-    // Create payment record if not COD
+
+    await createdOrder.calculateTotals(session);
+
+    if (voucherValidation) {
+      await voucherService.consumeVoucher({
+        voucher: voucherValidation.voucher,
+        userId: req.user._id,
+        orderId: createdOrder._id,
+        session
+      });
+    }
+
     let payment = null;
     if (paymentMethod !== 'cod') {
-      payment = await Payment.create([{
+      [payment] = await Payment.create([{
         orderId: createdOrder._id,
         userId: req.user._id,
         paymentMethod,
@@ -196,45 +212,52 @@ exports.createOrder = asyncHandler(async (req, res) => {
         notifyUrl: `${process.env.API_URL}/api/payments/webhook`
       }], { session });
     }
-    
-    // Clear cart (by marking it as converted)
+
     cart.status = 'converted';
     await cart.save({ session });
-    
-    // Commit transaction
     await session.commitTransaction();
-    
-    // Populate order details for response
-    await createdOrder.populate([
+    transactionCommitted = true;
+
+    try {
+      await createdOrder.populate([
       {
         path: 'orderItems',
+        options: { sort: { createdAt: 1 } },
         populate: [
-          {
-            path: 'productId',
-            select: 'name slug images'
-          },
-          {
-            path: 'variantId',
-            select: 'name sku color size material'
-          }
+          { path: 'productId', select: 'name slug images' },
+          { path: 'variantId', select: 'name sku color size material' }
         ]
       }
     ]);
-    
-    return ApiResponse.created(res, { 
-      order: createdOrder,
-      payment: payment ? payment[0] : null
-    }, 'Order created successfully');
+    } catch (populateError) {
+      console.error('Order created but response population failed:', populateError);
+    }
+
+    const responseBody = {
+      success: true,
+      message: 'Order created successfully',
+      data: { order: createdOrder, payment }
+    };
+    try {
+      await idempotencyService.complete({
+        record: idempotency.record,
+        statusCode: 201,
+        responseBody
+      });
+    } catch (idempotencyError) {
+      console.error('Order created but idempotency response could not be stored:', idempotencyError);
+    }
+    return res.status(201).json(responseBody);
   } catch (error) {
-    // Abort transaction on error
-    await session.abortTransaction();
+    if (!transactionCommitted) {
+      await session.abortTransaction();
+      await idempotencyService.abandon(idempotency.record);
+    }
     throw error;
   } finally {
-    // End session
-    session.endSession();
+    await session.endSession();
   }
 });
-
 /**
  * @desc    Get all user orders
  * @route   GET /api/orders
@@ -385,95 +408,43 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   
   // Special handling for cancelled status
   if (status === 'cancelled' && order.status !== 'cancelled') {
-    // Check if order can be cancelled
     if (['shipped', 'delivered'].includes(order.status)) {
       throw new ApiError(`Cannot cancel an order that is already ${order.status}`, 400);
     }
-    
-    // Add cancel reason
-    if (req.body.cancelReason) {
-      updateData.cancelReason = req.body.cancelReason;
-    }
-    
-    // Start a transaction to restore stock
+
     const session = await mongoose.startSession();
     session.startTransaction();
-    
     try {
-      // Restore stock for each item
-      const orderItems = await OrderItem.find({ orderId: order._id })
-        .populate('productId')
-        .populate('variantId')
-        .populate('flashSaleItemId');
-      
-      for (const item of orderItems) {
-        // Restore product stock
-        if (item.variantId) {
-          await ProductVariant.findByIdAndUpdate(
-            item.variantId._id,
-            { $inc: { stockQuantity: item.quantity } },
-            { session }
-          );
-        } else if (item.productId) {
-          await Product.findByIdAndUpdate(
-            item.productId._id,
-            { $inc: { stockQuantity: item.quantity } },
-            { session }
-          );
-        }
-        
-        // Restore flash sale stock if applicable
-        if (item.flashSaleItemId) {
-          await FlashSaleItem.findByIdAndUpdate(
-            item.flashSaleItemId._id,
-            { 
-              $inc: { usedQuantity: -item.quantity },
-              $inc: { remainingQuantity: item.quantity }
-            },
-            { session }
-          );
-        }
-      }
-      
-      // Update order
-      const updatedOrder = await Order.findByIdAndUpdate(
-        id,
-        updateData,
-        { new: true, runValidators: true, session }
-      );
-      
-      // Commit transaction
+      const updatedOrder = await orderCancellationService.cancelOrder({
+        orderId: id,
+        reason: req.body.cancelReason || 'Cancelled by staff',
+        session
+      });
       await session.commitTransaction();
-      
-      // Populate for response
+
       await updatedOrder.populate([
         {
           path: 'orderItems',
           options: { sort: { createdAt: 1 } },
           populate: [
-            {
-              path: 'productId',
-              select: 'name slug images'
-            },
-            {
-              path: 'variantId',
-              select: 'name sku color size material'
-            }
+            { path: 'productId', select: 'name slug images' },
+            { path: 'variantId', select: 'name sku color size material' }
           ]
         }
       ]);
-      
-      return ApiResponse.success(res, { order: updatedOrder }, 'Order status updated successfully');
+
+      return ApiResponse.success(
+        res,
+        { order: updatedOrder },
+        'Order status updated successfully'
+      );
     } catch (error) {
-      // Abort transaction on error
       await session.abortTransaction();
       throw error;
     } finally {
-      // End session
-      session.endSession();
+      await session.endSession();
     }
-  }
-  // Handle other status updates
+  }  // Handle other status updates
   else {
     // Update order
     const updatedOrder = await Order.findByIdAndUpdate(
@@ -512,110 +483,49 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 exports.cancelOrder = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
-  
-  // Find order
+
   const order = await Order.findById(id);
-  
   if (!order) {
     throw new ApiError('Order not found', 404);
   }
-  
-  // Check if order belongs to user
+
   if (order.userId.toString() !== req.user._id.toString()) {
     throw new ApiError('Not authorized to cancel this order', 403);
   }
-  
-  // Check if order can be cancelled
+
   if (['shipped', 'delivered', 'cancelled', 'refunded'].includes(order.status)) {
     throw new ApiError(`Cannot cancel an order that is already ${order.status}`, 400);
   }
-  
-  // Start a transaction to restore stock
+
   const session = await mongoose.startSession();
   session.startTransaction();
-  
   try {
-    // Restore stock for each item
-    const orderItems = await OrderItem.find({ orderId: order._id })
-      .populate('productId')
-      .populate('variantId')
-      .populate('flashSaleItemId');
-    
-    for (const item of orderItems) {
-      // Restore product stock
-      if (item.variantId) {
-        await ProductVariant.findByIdAndUpdate(
-          item.variantId._id,
-          { $inc: { stockQuantity: item.quantity } },
-          { session }
-        );
-      } else if (item.productId) {
-        await Product.findByIdAndUpdate(
-          item.productId._id,
-          { $inc: { stockQuantity: item.quantity } },
-          { session }
-        );
-      }
-      
-      // Restore flash sale stock if applicable
-      if (item.flashSaleItemId) {
-        await FlashSaleItem.findByIdAndUpdate(
-          item.flashSaleItemId._id,
-          { 
-            $inc: { usedQuantity: -item.quantity },
-            $inc: { remainingQuantity: item.quantity }
-          },
-          { session }
-        );
-      }
-    }
-    
-    // Update order
-    order.status = 'cancelled';
-    order.cancelReason = reason || 'Cancelled by customer';
-    order.cancelledAt = new Date();
-    
-    await order.save({ session });
-    
-    // If any payment exists for this order, cancel it
-    const payment = await Payment.findOne({ orderId: order._id });
-    if (payment && payment.status === 'pending') {
-      payment.status = 'cancelled';
-      await payment.save({ session });
-    }
-    
-    // Commit transaction
+    const updatedOrder = await orderCancellationService.cancelOrder({
+      orderId: id,
+      reason: reason || 'Cancelled by customer',
+      session
+    });
     await session.commitTransaction();
-    
-    // Populate for response
-    await order.populate([
+
+    await updatedOrder.populate([
       {
         path: 'orderItems',
         options: { sort: { createdAt: 1 } },
         populate: [
-          {
-            path: 'productId',
-            select: 'name slug images'
-          },
-          {
-            path: 'variantId',
-            select: 'name sku color size material'
-          }
+          { path: 'productId', select: 'name slug images' },
+          { path: 'variantId', select: 'name sku color size material' }
         ]
       }
     ]);
-    
-    return ApiResponse.success(res, { order }, 'Order cancelled successfully');
+
+    return ApiResponse.success(res, { order: updatedOrder }, 'Order cancelled successfully');
   } catch (error) {
-    // Abort transaction on error
     await session.abortTransaction();
     throw error;
   } finally {
-    // End session
-    session.endSession();
+    await session.endSession();
   }
 });
-
 /**
  * @desc    Get order tracking info
  * @route   GET /api/orders/:id/tracking

@@ -4,8 +4,39 @@ const Order = require('../models/Order');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../middlewares/async.middleware');
-const axios = require('axios');
 const crypto = require('crypto');
+const PaymentWebhookEvent = require('../models/PaymentWebhookEvent');
+const idempotencyService = require('../services/idempotency.service');
+const paymentGatewayService = require('../services/payment-gateway.service');
+const sendWebhookAcknowledgement = (res, gateway, duplicate = false) => {
+  if (gateway === 'vnpay') return res.status(200).send('OK');
+  if (gateway === 'momo') return res.status(200).json({ status: 'success', duplicate });
+  return res.status(200).json({
+    return_code: 1,
+    return_message: duplicate ? 'duplicate' : 'success'
+  });
+};
+
+const syncCompletedPaymentToOrder = async (payment) => {
+  if (!payment || payment.status !== 'completed' || !payment.orderId) return null;
+
+  const order = await Order.findById(payment.orderId);
+  if (!order) {
+    throw new ApiError('The payment references an order that no longer exists.', 409);
+  }
+  if (['cancelled', 'refunded'].includes(order.status)) {
+    throw new ApiError(`Cannot apply a completed payment to a ${order.status} order.`, 409);
+  }
+
+  if (!order.isPaid) {
+    order.isPaid = true;
+    order.paidAt = payment.paidAt || new Date();
+    if (order.status === 'pending') order.status = 'processing';
+    await order.save();
+  }
+
+  return order;
+};
 
 /**
  * @desc    Initiate payment for an order
@@ -14,197 +45,160 @@ const crypto = require('crypto');
  */
 exports.initiatePayment = asyncHandler(async (req, res) => {
   const { orderId, paymentMethod, returnUrl } = req.body;
-  
-  // Validate required fields
   if (!orderId || !paymentMethod) {
     throw new ApiError('Order ID and payment method are required', 400);
   }
-  
-  // Find order
+
   const order = await Order.findById(orderId);
-  
   if (!order) {
     throw new ApiError('Order not found', 404);
   }
-  
-  // Check if order belongs to user
   if (order.userId.toString() !== req.user._id.toString()) {
     throw new ApiError('Not authorized to pay for this order', 403);
   }
-  
-  // Check if order is already paid
   if (order.isPaid) {
     throw new ApiError('This order is already paid', 400);
   }
-  
-  // Check if order is cancelled
   if (order.status === 'cancelled') {
     throw new ApiError('Cannot pay for a cancelled order', 400);
   }
-  
-  // Check if payment already exists
-  const existingPayment = await Payment.findOne({
-    orderId,
-    status: { $in: ['pending', 'completed'] }
+
+  const idempotency = await idempotencyService.begin({
+    scope: `initiate-payment:${orderId}`,
+    key: req.get('Idempotency-Key') || req.body.idempotencyKey,
+    ownerId: req.user._id,
+    payload: req.body
   });
-  
-  if (existingPayment) {
-    // If payment is completed, return success
-    if (existingPayment.status === 'completed') {
-      return ApiResponse.success(res, { payment: existingPayment }, 'Payment already completed');
-    }
-    
-    // If payment method is different, cancel existing payment and create new one
-    if (existingPayment.paymentMethod !== paymentMethod) {
-      existingPayment.status = 'cancelled';
-      await existingPayment.save();
-    } else {
-      // Return existing payment info
-      return ApiResponse.success(res, { payment: existingPayment });
-    }
+  if (idempotency.replay) {
+    return res.status(idempotency.statusCode).json(idempotency.responseBody);
   }
-  
-  // Create payment data
-  const paymentData = {
-    orderId,
-    userId: req.user._id,
-    paymentMethod,
-    amount: order.totalAmount,
-    currency: 'VND',
-    status: 'pending',
-    returnUrl: returnUrl || `${process.env.FRONTEND_URL}/checkout/complete?orderId=${orderId}`,
-    notifyUrl: `${process.env.API_URL}/api/payments/webhook`
-  };
-  
-  // Process based on payment method
-  if (paymentMethod === 'vnpay') {
-    try {
-      const payment = await Payment.createPayment(paymentData);
-      
-      // Generate VNPay payment URL
-      const vnpUrl = await generateVnPayUrl(payment, order);
-      
-      // Update payment with URL
-      payment.paymentUrl = vnpUrl;
-      await payment.save();
-      
-      return ApiResponse.success(res, { 
-        payment,
-        redirectUrl: vnpUrl
+
+  try {
+    const existingPayment = await Payment.findOne({
+      orderId,
+      status: { $in: ['pending', 'completed'] }
+    });
+
+    if (existingPayment?.status === 'completed') {
+      const responseBody = {
+        success: true,
+        message: 'Payment already completed',
+        data: { payment: existingPayment }
+      };
+      await idempotencyService.complete({
+        record: idempotency.record,
+        statusCode: 200,
+        responseBody
       });
-    } catch (error) {
-      throw new ApiError(`Payment initialization failed: ${error.message}`, 500);
+      return res.status(200).json(responseBody);
     }
-  } 
-  else if (paymentMethod === 'momo') {
-    try {
-      const payment = await Payment.createPayment(paymentData);
-      
-      // Generate MoMo payment URL
-      const momoUrl = await generateMomoUrl(payment, order);
-      
-      // Update payment with URL
-      payment.paymentUrl = momoUrl;
+
+    let payment = existingPayment;
+    if (payment && payment.paymentMethod !== paymentMethod) {
+      payment.status = 'cancelled';
       await payment.save();
-      
-      return ApiResponse.success(res, { 
-        payment,
-        redirectUrl: momoUrl
-      });
-    } catch (error) {
-      throw new ApiError(`Payment initialization failed: ${error.message}`, 500);
+      payment = null;
     }
-  }
-  else if (paymentMethod === 'zalopay') {
-    try {
-      const payment = await Payment.createPayment(paymentData);
-      
-      // Generate ZaloPay payment URL
-      const zaloUrl = await generateZaloPayUrl(payment, order);
-      
-      // Update payment with URL
-      payment.paymentUrl = zaloUrl;
+
+    const paymentData = {
+      orderId,
+      userId: req.user._id,
+      paymentMethod,
+      amount: order.totalAmount,
+      currency: 'VND',
+      status: 'pending',
+      returnUrl: returnUrl || `${process.env.FRONTEND_URL}/checkout/complete?orderId=${orderId}`,
+      notifyUrl: `${process.env.API_URL}/api/payments/webhook`
+    };
+
+    if (!payment) {
+      payment = await Payment.createPayment(paymentData);
+    }
+
+    let redirectUrl;
+    if (paymentMethod === 'vnpay') {
+      redirectUrl = payment.paymentUrl || await generateVnPayUrl(payment, order);
+    } else if (paymentMethod === 'momo') {
+      redirectUrl = payment.paymentUrl || await generateMomoUrl(payment, order);
+    } else if (paymentMethod === 'zalopay') {
+      redirectUrl = payment.paymentUrl || await generateZaloPayUrl(payment, order);
+    } else if (!['cod', 'bank_transfer'].includes(paymentMethod)) {
+      throw new ApiError('Unsupported payment method', 400);
+    }
+
+    if (redirectUrl && payment.paymentUrl !== redirectUrl) {
+      payment.paymentUrl = redirectUrl;
       await payment.save();
-      
-      return ApiResponse.success(res, { 
-        payment,
-        redirectUrl: zaloUrl
-      });
-    } catch (error) {
-      throw new ApiError(`Payment initialization failed: ${error.message}`, 500);
     }
-  }
-  else if (paymentMethod === 'cod') {
-    // For COD, just create a pending payment record
-    const payment = await Payment.createPayment(paymentData);
-    
-    return ApiResponse.success(res, { payment });
-  }
-  else {
-    throw new ApiError('Unsupported payment method', 400);
+
+    const responseBody = {
+      success: true,
+      message: null,
+      data: { payment, ...(redirectUrl ? { redirectUrl } : {}) }
+    };
+    await idempotencyService.complete({
+      record: idempotency.record,
+      statusCode: 200,
+      responseBody
+    });
+    return res.status(200).json(responseBody);
+  } catch (error) {
+    await idempotencyService.abandon(idempotency.record);
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(`Payment initialization failed: ${error.message}`, 500);
   }
 });
-
 /**
  * @desc    Complete payment (after redirect from payment gateway)
  * @route   GET /api/payments/complete
  * @access  Public
  */
 exports.completePayment = asyncHandler(async (req, res) => {
-  const { paymentId, vnp_ResponseCode, vnp_TransactionStatus, orderId } = req.query;
+  const { paymentId, vnp_TxnRef, vnp_ResponseCode, vnp_TransactionStatus, orderId } = req.query;
   
   let payment;
   
   // Find payment by ID or order ID
-  if (paymentId) {
-    payment = await Payment.findOne({ paymentId });
+  if (paymentId || vnp_TxnRef) {
+    payment = await Payment.findOne({ paymentId: paymentId || vnp_TxnRef });
   } else if (orderId) {
     payment = await Payment.findOne({ orderId });
   } else {
-    throw new ApiError('Payment ID or Order ID is required', 400);
+    throw new ApiError('Payment ID, VNPay reference, or Order ID is required', 400);
   }
   
   if (!payment) {
     throw new ApiError('Payment not found', 404);
   }
   
-  // Process VNPay response
-  if (payment.paymentMethod === 'vnpay' && (vnp_ResponseCode !== undefined || vnp_TransactionStatus !== undefined)) {
-    // Save VNPay response
+  // Only a signed VNPay response may change payment state. Generic query
+  // parameters such as ?status=success are never trusted.
+  if (payment.paymentMethod === 'vnpay' &&
+      (vnp_ResponseCode !== undefined || vnp_TransactionStatus !== undefined)) {
+    if (!paymentGatewayService.verifyVnPay(req.query)) {
+      throw new ApiError('Invalid VNPay signature', 400);
+    }
+
     payment.gatewayResponse = req.query;
-    
-    // Check payment status
-    if (vnp_ResponseCode === '00' && vnp_TransactionStatus === '00') {
+    if (vnp_ResponseCode === '00' &&
+        (!vnp_TransactionStatus || vnp_TransactionStatus === '00')) {
+      if (['failed', 'cancelled', 'refunded'].includes(payment.status)) {
+        throw new ApiError(`Cannot complete a payment in ${payment.status} state`, 409);
+      }
       payment.status = 'completed';
       payment.transactionId = req.query.vnp_TransactionNo;
       payment.paidAt = new Date();
-    } else {
+    } else if (payment.status === 'pending') {
       payment.status = 'failed';
       payment.errorMessage = `VNPay error: ${vnp_ResponseCode}`;
     }
-    
     await payment.save();
   }
-  // For other payment methods, check status from gateway if needed
-  else if (payment.status === 'pending') {
-    // Placeholder for checking payment status from gateway
-    // In a real implementation, this would verify payment status with the gateway
-    
-    // For demo purposes, consider it completed
-    if (req.query.status === 'success') {
-      payment.status = 'completed';
-      payment.paidAt = new Date();
-      await payment.save();
-    } else if (req.query.status === 'failed') {
-      payment.status = 'failed';
-      payment.errorMessage = req.query.message || 'Payment failed';
-      await payment.save();
-    }
-    // Otherwise keep it as pending
-  }
-  
-  // Find order to include in response
-  const order = await Order.findById(payment.orderId);
+  // Keep order payment state explicit rather than relying only on a
+  // document hook, then include the synchronized order in the response.
+  const order = payment.status === 'completed'
+    ? await syncCompletedPaymentToOrder(payment)
+    : await Order.findById(payment.orderId);
   
   return ApiResponse.success(res, { 
     payment,
@@ -223,86 +217,95 @@ exports.completePayment = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.paymentWebhook = asyncHandler(async (req, res) => {
-  const { body } = req;
-  
-  // Determine payment gateway from request
-  let paymentMethod = '';
-  let paymentId = '';
-  let status = '';
-  let transactionId = '';
-  
-  // VNPay webhook
-  if (body.vnp_TxnRef) {
-    paymentMethod = 'vnpay';
-    // Extract payment ID from TxnRef (format: PM-XXXXX)
-    paymentId = body.vnp_TxnRef;
-    status = body.vnp_ResponseCode === '00' ? 'completed' : 'failed';
-    transactionId = body.vnp_TransactionNo;
+  const body = req.body || {};
+  const normalized = paymentGatewayService.normalizeWebhook(body);
+
+  if (!normalized.verify()) {
+    return res.status(401).json({ error: 'Invalid payment webhook signature' });
   }
-  // MoMo webhook
-  else if (body.partnerCode === process.env.MOMO_PARTNER_CODE) {
-    paymentMethod = 'momo';
-    // Extract payment ID from orderId
-    paymentId = body.orderId;
-    status = body.resultCode === 0 ? 'completed' : 'failed';
-    transactionId = body.transId;
-  }
-  // ZaloPay webhook
-  else if (body.appid === process.env.ZALOPAY_APP_ID) {
-    paymentMethod = 'zalopay';
-    // Extract payment ID from app_trans_id
-    paymentId = body.app_trans_id;
-    status = body.status === 1 ? 'completed' : 'failed';
-    transactionId = body.zp_trans_id;
-  }
-  else {
-    return res.status(400).json({ error: 'Unknown payment gateway' });
-  }
-  
+
+  const payloadHash = paymentGatewayService.hashPayload(body);
+  let event;
   try {
-    // Find payment
-    const payment = await Payment.findOne({ paymentId });
-    
+    event = await PaymentWebhookEvent.create({
+      gateway: normalized.gateway,
+      eventId: normalized.eventId,
+      paymentId: normalized.paymentId,
+      payloadHash,
+      status: 'received'
+    });
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    const previous = await PaymentWebhookEvent.findOne({
+      gateway: normalized.gateway,
+      eventId: normalized.eventId
+    });
+    if (previous && previous.payloadHash !== payloadHash) {
+      return res.status(409).json({ error: 'Webhook event ID was reused with a different payload' });
+    }
+    if (!previous || previous.status === 'processed') {
+      return sendWebhookAcknowledgement(res, normalized.gateway, true);
+    }
+
+    // A process can stop after the event is recorded but before the payment is
+    // updated. Re-run received/failed events; only processed events are final.
+    previous.status = 'received';
+    previous.errorMessage = undefined;
+    await previous.save();
+    event = previous;
+  }
+
+  try {
+    const payment = await Payment.findOne({ paymentId: normalized.paymentId });
     if (!payment) {
+      event.status = 'failed';
+      event.errorMessage = 'Payment not found';
+      await event.save();
       return res.status(404).json({ error: 'Payment not found' });
     }
-    
-    // Verify payment method
-    if (payment.paymentMethod !== paymentMethod) {
+
+    if (payment.paymentMethod !== normalized.gateway) {
+      event.status = 'failed';
+      event.errorMessage = 'Payment method mismatch';
+      await event.save();
       return res.status(400).json({ error: 'Payment method mismatch' });
     }
-    
-    // Save webhook data
+
     payment.gatewayResponse = body;
-    
-    // Update payment status
-    if (status === 'completed' && payment.status !== 'completed') {
-      payment.status = 'completed';
-      payment.transactionId = transactionId;
-      payment.paidAt = new Date();
-    } else if (status === 'failed' && payment.status !== 'failed') {
+    if (normalized.status === 'completed') {
+      if (['failed', 'cancelled', 'refunded'].includes(payment.status)) {
+        event.status = 'failed';
+        event.errorMessage = `Cannot complete a payment in ${payment.status} state`;
+        await event.save();
+        return res.status(409).json({ error: event.errorMessage });
+      }
+      if (payment.status !== 'completed') {
+        payment.status = 'completed';
+        payment.transactionId = normalized.transactionId;
+        payment.paidAt = new Date();
+      }
+    } else if (payment.status === 'pending') {
       payment.status = 'failed';
-      payment.errorMessage = body.message || `${paymentMethod} error`;
+      payment.errorMessage = normalized.message;
     }
-    
+
     await payment.save();
-    
-    // Return success response based on payment gateway
-    if (paymentMethod === 'vnpay') {
-      return res.status(200).send('OK');
-    } else if (paymentMethod === 'momo') {
-      return res.status(200).json({ status: 'success' });
-    } else if (paymentMethod === 'zalopay') {
-      return res.status(200).json({ return_code: 1, return_message: 'success' });
-    } else {
-      return res.status(200).json({ success: true });
+    if (normalized.status === 'completed' && payment.status === 'completed') {
+      await syncCompletedPaymentToOrder(payment);
     }
+    event.status = 'processed';
+    event.processedAt = new Date();
+    await event.save();
+
+    return sendWebhookAcknowledgement(res, normalized.gateway);
+
   } catch (error) {
-    console.error('Webhook error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    event.status = 'failed';
+    event.errorMessage = error.message;
+    await event.save();
+    throw error;
   }
 });
-
 /**
  * @desc    Get payment by ID
  * @route   GET /api/payments/:id

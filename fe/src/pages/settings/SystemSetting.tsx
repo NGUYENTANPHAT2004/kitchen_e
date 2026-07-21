@@ -19,7 +19,7 @@ interface SystemSettingsForm {
 
 const SystemSettings: React.FC = () => {
   const [formChanged, setFormChanged] = useState(false);
-  const { register, handleSubmit, watch, setValue, formState: { isDirty } } = useForm<SystemSettingsForm>({
+  const { register, handleSubmit, formState: { isDirty } } = useForm<SystemSettingsForm>({
     defaultValues: {
       redis: {
         host: '127.0.0.1',

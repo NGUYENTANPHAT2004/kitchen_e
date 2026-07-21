@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, useRoutes } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Outlet, useRoutes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './features/auth/contexts/auth-context';
@@ -23,7 +23,6 @@ import OrdersPage from './features/order/pages/client/order/Myorder';
 // Lazy load all admin pages
 const Dashboard = React.lazy(() => import('./pages/dashboard/dashboard-overview'));
 
-const ProductCustomizations = React.lazy(() => import('./features/products/components/ProductCustomizations/ProductCustomizations'));
 const Orders = React.lazy(() => import('./features/order/pages/dashboard/OrderList'));
 const AddFlashSale = React.lazy(() => import('./features/flash-sales/pages/dashboard/AddFlashSale'));
 const FlashSaleList = React.lazy(() => import('./features/flash-sales/pages/dashboard/FlashSaleList'));
@@ -119,6 +118,7 @@ const AppRoutes: React.FC = () => {
           children: [
             { index: true, element: <ProductListPage /> },
             { path: 'add', element: <AddProductPage /> },
+            { path: ':id/edit', element: <EditProductPage /> },
             { path: 'categories', element: <CategoryManagement /> },
             { path: ':id/customizations', element: <ProductCustomizationsPage /> },
             { path: ':id', element: <ProductDetailPage /> }

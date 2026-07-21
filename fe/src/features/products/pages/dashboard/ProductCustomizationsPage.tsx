@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Modal, Typography, Alert, Breadcrumb, message } from 'antd';
-import { PlusOutlined, ArrowLeftOutlined, HomeOutlined, ShopOutlined } from '@ant-design/icons';
+import { PlusOutlined, ArrowLeftOutlined, HomeOutlined } from '@ant-design/icons';
 import { useProductCustomizations, useCreateCustomization, useUpdateCustomization, useDeleteCustomization } from '../../../customizations/hooks/useCustomizations';
 import CustomizationList from '../../../customizations/components/CustomizationList';
 import CustomizationForm from '../../../customizations/components/CustomizationForm';

@@ -1,5 +1,5 @@
-import { api, endpoints, uploadUtils } from '../../../config/api_cli.config';
-import type { Customization, CustomizationFormData } from '../interface/interface';
+import { api } from '../../../config/api_cli.config';
+import type { CustomizationFormData } from '../interface/interface';
 
 export const customizationService = {
   // Get customizations for a product

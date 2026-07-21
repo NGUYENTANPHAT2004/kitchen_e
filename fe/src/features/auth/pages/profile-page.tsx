@@ -111,7 +111,7 @@ const ProfilePage: React.FC = () => {
       lastName?: string;
       phoneNumber?: string;
     } = {};
-    let isValid = true;
+    const isValid = true;
     
     // Add validation if needed
     

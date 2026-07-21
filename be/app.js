@@ -102,7 +102,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key'],
     exposedHeaders: ['Content-Range', 'X-Content-Range', 'Content-Length']
   })
 );
@@ -127,51 +127,7 @@ try {
 }
 
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-  setHeaders: (res, filePath) => {
-  
-    if (filePath.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
-      res.set('Cache-Control', 'public, max-age=86400'); 
-      res.set('X-Content-Type-Options', 'nosniff');
-    }
-    res.set('Access-Control-Allow-Origin', '*');
-  },
-  fallthrough: false
-}));
-
-
-app.use('/uploads', (req, res) => {
-  const filePath = req.path;
-  
-  console.log('File not found:', filePath);
-  
-
-  if (filePath.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
-    const fallbackImagePath = path.join(__dirname, 'uploads', 'fallback', 'no-image.png');
-    
-    if (require('fs').existsSync(fallbackImagePath)) {
-      return res.sendFile(fallbackImagePath);
-    } else {
-      const svgFallback = `
-        <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
-          <rect width="100%" height="100%" fill="#f0f0f0"/>
-          <text x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="Arial, sans-serif" font-size="14" fill="#999">
-            No Image
-          </text>
-        </svg>
-      `;
-      
-      res.set('Content-Type', 'image/svg+xml');
-      return res.send(svgFallback);
-    }
-  }
-  
-
-  res.status(404).json({
-    error: 'File not found',
-    path: filePath
-  });
-});
+// Uploaded files are mounted once by initializeStaticFiles above.
 
 
 app.use('/api/', defaultLimiter);

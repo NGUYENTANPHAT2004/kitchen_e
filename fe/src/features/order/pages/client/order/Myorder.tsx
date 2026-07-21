@@ -158,8 +158,8 @@ const OrdersPage: React.FC = () => {
                     {order.shippingAddress && (
                       <div className="mt-3 text-sm text-gray-600 border-t pt-3">
                         <span className="font-medium">Giao đến: </span>
-                        {order.shippingAddress.fullName} · {order.shippingAddress.street},{' '}
-                        {order.shippingAddress.city}, {order.shippingAddress.province} ·{' '}
+                        {order.shippingAddress.fullName} · {order.shippingAddress.address},{' '}
+                        {order.shippingAddress.city}, {order.shippingAddress.state} ·{' '}
                         {order.shippingAddress.phone}
                       </div>
                     )}

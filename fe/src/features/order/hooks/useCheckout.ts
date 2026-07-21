@@ -31,7 +31,11 @@ export const useCheckout = () => {
   const [voucher, setVoucher] = useState<VoucherResult | null>(null);
   const [applyingVoucher, setApplyingVoucher] = useState(false);
 
-  const shippingFee = form.shippingMethod === 'express' ? 150000 : 0;
+  const shippingFee = subtotal >= 500000
+    ? 0
+    : form.shippingMethod === 'express'
+      ? 50000
+      : 30000;
   const discount = voucher?.discountAmount ?? 0;
   const total = subtotal + shippingFee - discount;
 
@@ -49,7 +53,7 @@ export const useCheckout = () => {
     if (!form.discountCode.trim()) return;
     setApplyingVoucher(true);
     try {
-      const result = await orderService.applyVoucher(form.discountCode.trim(), subtotal);
+      const result = await orderService.applyVoucher(form.discountCode.trim());
       setVoucher(result);
       toast.success(`Áp dụng mã giảm giá thành công: -${result.discountAmount.toLocaleString()}₫`);
     } catch {
@@ -81,27 +85,18 @@ export const useCheckout = () => {
     }
 
     orderMutation.mutate({
-      items: items.map((item) => ({
-        productId: item.productId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-        price: item.price,
-      })),
       shippingAddress: {
         fullName: `${form.firstName} ${form.lastName}`.trim(),
-        street: [form.address, form.apartment].filter(Boolean).join(', '),
+        address: [form.address, form.apartment].filter(Boolean).join(', '),
         city: form.city,
-        province: form.province,
-        zipCode: form.zipCode,
+        state: form.province,
+        postalCode: form.zipCode,
         country: form.country,
         phone: form.phone,
       },
       paymentMethod: form.paymentMethod,
       shippingMethod: form.shippingMethod,
-      shippingFee,
-      ...(voucher && { voucherCode: voucher.voucherCode, discountAmount: voucher.discountAmount }),
-      totalAmount: total,
-      customerEmail: form.email,
+      ...(voucher && { voucherId: voucher.voucherId }),
     });
   };
 

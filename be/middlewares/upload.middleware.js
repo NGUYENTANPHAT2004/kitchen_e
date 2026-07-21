@@ -379,7 +379,7 @@ const deleteFile = async (filePath) => {
 // Get fallback image URL
 const getFallbackImageUrl = () => {
   const baseUrl = process.env.API_URL || 'http://localhost:5000';
-  return `${baseUrl}/uploads/fallback/no-image.png`;
+  return `${baseUrl}/uploads/fallback/no-image.svg`;
 };
 
 // Predefined upload middleware functions

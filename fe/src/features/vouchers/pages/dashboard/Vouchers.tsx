@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Tag, Search, Calendar, ArrowUpDown, PlusCircle, Edit,
-  Trash2, Eye, Copy, ChevronLeft, ChevronRight, Filter,
+  Tag, Search, ArrowUpDown, PlusCircle, Edit,
+  Trash2, Copy, ChevronLeft, ChevronRight, Filter,
   Percent, DollarSign
 } from 'lucide-react';
 import {

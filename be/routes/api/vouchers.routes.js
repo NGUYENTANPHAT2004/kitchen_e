@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../../middlewares/auth.middleware');
+const ApiError = require('../../utils/apiError');
 const {
   getVouchers,
   getVoucher,

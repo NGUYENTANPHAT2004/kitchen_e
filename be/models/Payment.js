@@ -96,6 +96,8 @@ const PaymentSchema = new mongoose.Schema(
 
 // Generate unique payment ID before saving
 PaymentSchema.pre('save', function(next) {
+  this.$locals.completedInThisSave = this.isModified('status') && this.status === 'completed';
+
   if (!this.paymentId) {
     // Format: PM-{random 10 chars}
     this.paymentId = `PM-${uuidv4().substring(0, 10).toUpperCase()}`;
@@ -111,12 +113,12 @@ PaymentSchema.pre('save', function(next) {
 
 // After payment completion, update order payment status
 PaymentSchema.post('save', async function() {
-  if (this.isModified('status') && this.status === 'completed') {
+  if (this.$locals.completedInThisSave) {
     try {
       const Order = mongoose.model('Order');
       const order = await Order.findById(this.orderId);
       
-      if (order && !order.isPaid) {
+      if (order && !order.isPaid && !['cancelled', 'refunded'].includes(order.status)) {
         order.isPaid = true;
         order.paidAt = new Date();
         

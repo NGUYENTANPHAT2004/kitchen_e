@@ -1,21 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const categoryController = require('../../controllers/category.controller');
-const { protect, authorize, optionalAuth } = require('../../middlewares/auth.middleware');
+const { protect, authorize } = require('../../middlewares/auth.middleware');
 const { uploadCategoryImage } = require('../../middlewares/upload.middleware');
 
-// Public category routes
 router.get('/', categoryController.getCategories);
 router.get('/featured', categoryController.getFeaturedCategories);
-router.get('/:id', categoryController.getCategory);
 router.get('/:id/products', categoryController.getCategoryProducts);
+router.get('/:id', categoryController.getCategory);
 
-// Admin/Staff category routes with proper image upload
+// Static mutation route must be registered before PUT /:id.
+router.put(
+  '/reorder',
+  protect,
+  authorize('admin', 'staff'),
+  categoryController.reorderCategories
+);
+
 router.post(
   '/',
   protect,
   authorize('admin', 'staff'),
-  uploadCategoryImage, // Single image upload for categories
+  uploadCategoryImage,
   categoryController.createCategory
 );
 
@@ -23,7 +29,7 @@ router.put(
   '/:id',
   protect,
   authorize('admin', 'staff'),
-  uploadCategoryImage, // Single image upload for categories
+  uploadCategoryImage,
   categoryController.updateCategory
 );
 
@@ -39,13 +45,6 @@ router.put(
   protect,
   authorize('admin'),
   categoryController.restoreCategory
-);
-
-router.put(
-  '/reorder',
-  protect,
-  authorize('admin', 'staff'),
-  categoryController.reorderCategories
 );
 
 module.exports = router;

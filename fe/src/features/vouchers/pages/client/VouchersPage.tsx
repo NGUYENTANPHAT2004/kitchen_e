@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Scissors, Clock, AlertCircle, Copy, Share2, Plus, ChevronRight, Calendar, User, ShoppingBag } from 'lucide-react';
+import { Scissors, Clock, AlertCircle, Copy, Share2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../../config/api_cli.config';
 import type { TabType, Voucher } from '../../interface/interface';

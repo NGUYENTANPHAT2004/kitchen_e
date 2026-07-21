@@ -39,7 +39,7 @@ const ProductListPage: React.FC = () => {
     });
   };
 
-  const handleTableChange = (pagination: any, tableFilters: any, sorter: any) => {
+  const handleTableChange = (pagination: any, _tableFilters: any, sorter: any) => {
     const newFilters: Partial<ProductFilters> = {
       page: pagination.current,
       limit: pagination.pageSize

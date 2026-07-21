@@ -1,21 +1,14 @@
 // src/features/auth/components/Login/LoginForm.tsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../hooks/auth-hook';
 import type { LoginRequest } from '../../interfaces/auth-interfaces';
 import AuthLayout from '../AuthLayout';
 
-interface LocationState {
-  from?: string;
-}
-
 const LoginForm: React.FC = () => {
   const { state: authState, login, clearError } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const locationState = location.state as LocationState;
-  const from = locationState?.from || '/shop';
   
   const [formData, setFormData] = useState<LoginRequest>({
     email: '',

@@ -22,7 +22,7 @@ const UserSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/ ,
         'Vui lòng nhập email hợp lệ'
       ]
     },
@@ -77,54 +77,64 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
-    lastLogin: Date
-  },
-  {
-  addresses: [
-    {
-      _id: {
-        type: mongoose.Schema.Types.ObjectId,
-        default: () => new mongoose.Types.ObjectId()
-      },
-      fullName: {
-        type: String,
-        required: true
-      },
-      phone: {
-        type: String,
-        required: true
-      },
-      address: {
-        type: String,
-        required: true
-      },
-      city: {
-        type: String,
-        required: true
-      },
-      state: {
-        type: String
-      },
-      postalCode: {
-        type: String
-      },
-      country: {
-        type: String,
-        default: 'Vietnam'
-      },
-      isDefault: {
-        type: Boolean,
-        default: false
+    lastLogin: Date,
+    lastActivity: Date,
+    avatarPath: String,
+    isLocked: {
+      type: Boolean,
+      default: false
+    },
+    lockUntil: Date,
+    addresses: [
+      {
+        _id: {
+          type: mongoose.Schema.Types.ObjectId,
+          default: () => new mongoose.Types.ObjectId()
+        },
+        fullName: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        phone: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        address: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        city: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        state: {
+          type: String,
+          trim: true
+        },
+        postalCode: {
+          type: String,
+          trim: true
+        },
+        country: {
+          type: String,
+          default: 'Vietnam',
+          trim: true
+        },
+        isDefault: {
+          type: Boolean,
+          default: false
+        }
       }
+    ],
+    // ID c?a ??a ch? m?c ??nh trong m?ng addresses (embedded subdocument).
+    defaultAddress: {
+      type: mongoose.Schema.Types.ObjectId
     }
-  ],
-  
-  // Tham chiếu đến địa chỉ mặc định
-  defaultAddress: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'addresses'
-  }
-},
+  },
   {
     timestamps: true,
     toJSON: { virtuals: true },

@@ -4,6 +4,10 @@ const UserVoucher = require('../models/UserVoucher');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const User = require('../models/User');
+const Cart = require('../models/Cart');
+const CartItem = require('../models/CartItem');
+const pricingService = require('../services/pricing.service');
+const voucherService = require('../services/voucher.service');
 const asyncHandler = require('../middlewares/async.middleware');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
@@ -11,7 +15,7 @@ const ApiResponse = require('../utils/apiResponse');
 // @desc      Get all vouchers
 // @route     GET /api/vouchers
 // @access    Private (Admin)
-exports.getVouchers = asyncHandler(async (req, res, next) => {
+exports.getVouchers = asyncHandler(async (req, res, _next) => {
   const { active, expired, page = 1, limit = 10 } = req.query;
   const query = { isDeleted: false };
   
@@ -307,7 +311,7 @@ exports.assignVoucherToMultipleUsers = asyncHandler(async (req, res, next) => {
 // @desc      Get user vouchers
 // @route     GET /api/users/:userId/vouchers
 // @access    Private
-exports.getUserVouchers = asyncHandler(async (req, res, next) => {
+exports.getUserVouchers = asyncHandler(async (req, res, _next) => {
   const { active, page = 1, limit = 10 } = req.query;
   const query = { 
     userId: req.params.userId,
@@ -351,7 +355,7 @@ exports.getUserVouchers = asyncHandler(async (req, res, next) => {
 // @desc      Get public vouchers
 // @route     GET /api/vouchers/public
 // @access    Public
-exports.getPublicVouchers = asyncHandler(async (req, res, next) => {
+exports.getPublicVouchers = asyncHandler(async (req, res, _next) => {
   const now = new Date();
   
   const query = {
@@ -381,82 +385,48 @@ exports.getPublicVouchers = asyncHandler(async (req, res, next) => {
 // @route     POST /api/vouchers/apply
 // @access    Private
 exports.applyVoucher = asyncHandler(async (req, res, next) => {
-  const { code, cartItems, cartTotal } = req.body;
-  
+  const { code } = req.body;
   if (!code) {
-    return next(new ApiError('Vui lòng cung cấp mã giảm giá', 400));
+    return next(new ApiError('Please provide a voucher code', 400));
   }
-  
-  if (!cartItems || !cartTotal) {
-    return next(new ApiError('Vui lòng cung cấp thông tin giỏ hàng', 400));
+
+  const cart = await Cart.findOne({ userId: req.user._id, status: 'active' });
+  if (!cart) {
+    return next(new ApiError('Active cart not found', 404));
   }
-  
-  // Find voucher by code
-  const voucher = await Voucher.findOne({
-    code: code.toUpperCase(),
-    isActive: true,
-    isDeleted: false
+
+  const cartItems = await CartItem.find({ cartId: cart._id })
+    .populate('productId')
+    .populate('variantId')
+    .populate({ path: 'flashSaleItemId', populate: 'flashSaleId' });
+  if (cartItems.length === 0) {
+    return next(new ApiError('Cart is empty', 400));
+  }
+
+  const pricedCart = pricingService.priceCartItems(cartItems);
+  const voucherItems = pricedCart.lines.map(({ item, lineTotal }) => ({
+    ...(typeof item.toObject === 'function' ? item.toObject() : item),
+    lineTotal
+  }));
+  const result = await voucherService.validateVoucher({
+    code,
+    userId: req.user._id,
+    cartTotal: pricedCart.subtotal,
+    cartItems: voucherItems
   });
-  
-  if (!voucher) {
-    return next(new ApiError('Mã giảm giá không hợp lệ hoặc đã hết hạn', 404));
-  }
-  
-  // Check if voucher is active and not expired
-  const now = new Date();
-  if (now < voucher.startDate || now > voucher.endDate) {
-    return next(new ApiError('Mã giảm giá đã hết hạn hoặc chưa bắt đầu', 400));
-  }
-  
-  // Check max usage
-  if (voucher.maxUsage > 0 && voucher.currentUsage >= voucher.maxUsage) {
-    return next(new ApiError('Mã giảm giá đã hết lượt sử dụng', 400));
-  }
-  
-  // Check minimum order value
-  if (cartTotal < voucher.minOrderValue) {
-    return next(new ApiError(`Giá trị đơn hàng tối thiểu phải là ${voucher.minOrderValue}`, 400));
-  }
-  
-  // Check if private voucher
-  if (voucher.isPrivate) {
-    // Check if user has this voucher
-    const userVoucher = await UserVoucher.findOne({
-      userId: req.user.id,
-      voucherId: voucher._id,
-      isUsed: false,
-      isDeleted: false
-    });
-    
-    if (!userVoucher) {
-      return next(new ApiError('Mã giảm giá này không áp dụng cho tài khoản của bạn', 400));
-    }
-  }
-  
-  // Calculate discount amount
-  let discountAmount = 0;
-  
-  if (voucher.discountType === 'percentage') {
-    discountAmount = (cartTotal * voucher.discountValue) / 100;
-  } else {
-    discountAmount = voucher.discountValue;
-  }
-  
-  // Ensure discount doesn't exceed cart total
-  discountAmount = Math.min(discountAmount, cartTotal);
-  
+  const discountAmount = result.discountAmount;
+
   return ApiResponse.success(res, {
     voucher: {
-      _id: voucher._id,
-      code: voucher.code,
-      discountType: voucher.discountType,
-      discountValue: voucher.discountValue,
+      _id: result.voucher._id,
+      code: result.voucher.code,
+      discountType: result.voucher.discountType,
+      discountValue: result.voucher.discountValue,
       discountAmount
     },
-    newTotal: cartTotal - discountAmount
-  }, 'Áp dụng mã giảm giá thành công');
+    newTotal: pricedCart.subtotal - discountAmount
+  }, 'Voucher applied successfully');
 });
-
 // @desc      Mark voucher as used
 // @route     PUT /api/vouchers/:id/use
 // @access    Private

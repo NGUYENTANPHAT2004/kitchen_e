@@ -1,6 +1,6 @@
 import React from 'react';
 import { Space, Button } from 'antd';
-import { SaveOutlined, UndoOutlined } from '@ant-design/icons';
+import { SaveOutlined } from '@ant-design/icons';
 
 interface FormActionsProps {
   onCancel: () => void;

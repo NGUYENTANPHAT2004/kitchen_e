@@ -1,5 +1,5 @@
 import React from 'react';
-import { Input, Select, Button, Space } from 'antd';
+import { Input, Select, Button } from 'antd';
 import { SearchOutlined, ClearOutlined } from '@ant-design/icons';
 
 interface FilterOption {

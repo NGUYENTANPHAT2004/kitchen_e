@@ -200,10 +200,12 @@ OrderSchema.pre(/^find/, function(next) {
 });
 
 // Method to calculate order totals
-OrderSchema.methods.calculateTotals = async function() {
+OrderSchema.methods.calculateTotals = async function(session) {
   try {
     const OrderItem = mongoose.model('OrderItem');
-    const orderItems = await OrderItem.find({ orderId: this._id });
+    let orderItemsQuery = OrderItem.find({ orderId: this._id });
+    if (session) orderItemsQuery = orderItemsQuery.session(session);
+    const orderItems = await orderItemsQuery;
     
     let subtotal = 0;
     
@@ -216,7 +218,7 @@ OrderSchema.methods.calculateTotals = async function() {
     this.subtotal = subtotal;
     this.totalAmount = subtotal + this.shippingCost + this.tax - this.discount;
     
-    return this.save();
+    return this.save(session ? { session } : undefined);
   } catch (error) {
     throw new Error(`Failed to calculate order totals: ${error.message}`);
   }

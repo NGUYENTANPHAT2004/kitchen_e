@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  BarChart2, Calendar, Filter, Download, Printer, ChevronDown,
-  DollarSign, ShoppingCart, Users, Package, TrendingUp, TrendingDown,
+  BarChart2, Calendar, Download, Printer,
+  DollarSign, ShoppingCart, Package, TrendingUp, TrendingDown,
   ArrowRight, Zap
 } from 'lucide-react';
 import { 
@@ -102,7 +102,7 @@ const SalesReport: React.FC = () => {
     if (value >= 1000) {
       return `${value / 1000}K`;
     }
-    return value;
+    return String(value);
   };
 
   return (

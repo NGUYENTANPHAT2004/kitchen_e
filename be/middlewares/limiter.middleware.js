@@ -68,7 +68,10 @@ const createLimiter = ({
 };
 
 // Limiter mặc định cho toàn bộ API
-const defaultLimiter = createLimiter();
+const defaultLimiter = createLimiter({
+  max: Number(process.env.API_RATE_LIMIT_MAX) || 1000,
+  skipSuccessfulRequests: true
+});
 
 // Limiter nghiêm ngặt hơn cho các route xác thực
 const authLimiter = createLimiter({

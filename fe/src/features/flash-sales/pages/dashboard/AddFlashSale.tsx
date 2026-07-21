@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Zap, Calendar, Clock, Save, XCircle, Plus, Search,
-  ArrowLeft, Trash2, Tag, DollarSign, Percent, Check
+  Zap, Save, Plus, Search,
+  ArrowLeft, Trash2, Tag, Percent
 } from 'lucide-react';
 import { useProducts } from '../../../products/hooks/useProducts';
 import { useCreateFlashSale, useAddFlashSaleItem } from '../../hooks/useFlashSales';
@@ -62,6 +62,7 @@ const AddFlashSale: React.FC = () => {
   // Real products from API
   const { data: productsData } = useProducts({ search: searchTerm || undefined, limit: 50 });
   const allProducts: ProductUI[] = (productsData?.data?.products ?? []).map((p: Product) => ({
+    _id: p._id,
     id: p._id,
     name: p.name,
     image: p.images?.[0]?.url,

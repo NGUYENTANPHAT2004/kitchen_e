@@ -1,10 +1,7 @@
 // src/features/auth/routes/authRoutes.tsx
-import React from 'react';
 import type { RouteObject } from 'react-router-dom';
-import ProtectedRoute from '../components/protected-route';
 import VerifyEmailPage from '../components/VerifyEmail/verify-email-page';
 import OAuthCallbackPage from '../pages/oauth-callback';
-import ProfilePage from '../pages/profile-page';
 import RegisterForm from '../components/Register/register-component';
 import ForgotPasswordForm from '../components/ForgotPassword/forgot-password-component';
 import ResetPasswordForm from '../components/ResetPassword/reset-password-component';

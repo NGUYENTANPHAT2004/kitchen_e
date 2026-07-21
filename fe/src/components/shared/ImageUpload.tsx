@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Upload, Button, Image, message, Modal } from 'antd';
-import { PlusOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { Upload, message, Modal } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import type { UploadFile, UploadProps } from 'antd';
-import { urlUtils } from '../../config/api_cli.config';
 
 interface ImageUploadProps {
   value?: UploadFile[];
@@ -21,7 +20,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   multiple = true,
   onRemove,
   disabled = false,
-  folder = 'products'
 }) => {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewImage, setPreviewImage] = useState('');
@@ -47,9 +45,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       file.preview = await getBase64(file.originFileObj as File);
     }
 
-    setPreviewImage(file.url || file.preview);
+    const preview = file.url || file.preview;
+    if (!preview) return;
+    setPreviewImage(preview);
     setPreviewVisible(true);
-    setPreviewTitle(file.name || file.url!.substring(file.url!.lastIndexOf('/') + 1));
+    setPreviewTitle(file.name || file.url?.substring(file.url.lastIndexOf('/') + 1) || 'Image preview');
   };
 
   const getBase64 = (file: File): Promise<string> =>

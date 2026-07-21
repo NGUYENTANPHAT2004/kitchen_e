@@ -1,6 +1,8 @@
 import { api, endpoints } from '../../../config/api_cli.config';
 import type { ProductFilters, ProductFormData } from '../interface/productCustomization';
 
+export type { Product, ProductFilters, ProductFormData } from '../interface/productCustomization';
+
 
 export const productService = {
   // Get products with filters and pagination

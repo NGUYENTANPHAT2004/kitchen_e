@@ -15,15 +15,6 @@ const EditProductPage: React.FC = () => {
   // Fetch product
   const { data: productData, isLoading: isLoadingProduct } = useProduct(id!);
   
-  // Fetch categories
-  const { data: categoriesData } = useQuery({
-    queryKey: ['categories'],
-    queryFn: async () => {
-      const response = await api.get('/categories');
-      return response.data;
-    }
-  });
-
   const handleSubmit = async (data: ProductFormData) => {
     try {
       await updateProductMutation.mutateAsync({ id: id!, data });

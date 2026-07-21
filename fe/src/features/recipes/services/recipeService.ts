@@ -1,4 +1,4 @@
-import { api, uploadUtils } from '../../../config/api_cli.config';
+import { api } from '../../../config/api_cli.config';
 import type { Recipe, RecipeFormData, RecipePagination } from '../interface/interface';
 
 const recipeService = {

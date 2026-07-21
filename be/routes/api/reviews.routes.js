@@ -17,20 +17,16 @@ const {
 } = require('../../controllers/review.controller');
 
 // @route   /api/reviews
-
-// Public routes
 router.get('/', getReviews);
+router.get('/admin/pending', protect, authorize('admin'), getPendingReviews);
+router.get('/admin/reported', protect, authorize('admin'), getReportedReviews);
 router.get('/:id', getReview);
 
-// Protected routes (logged in users)
 router.post('/', protect, createReview);
 router.put('/:id', protect, updateReview);
 router.delete('/:id', protect, deleteReview);
 router.post('/:id/report', protect, reportReview);
 
-// Admin only routes
-router.get('/admin/pending', protect, authorize('admin'), getPendingReviews);
-router.get('/admin/reported', protect, authorize('admin'), getReportedReviews);
 router.put('/:id/approve', protect, authorize('admin'), approveReview);
 router.put('/:id/reject', protect, authorize('admin'), rejectReview);
 router.post('/:id/respond', protect, authorize('admin'), respondToReview);

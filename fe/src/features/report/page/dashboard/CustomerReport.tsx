@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { 
-  Users, Search, Filter, Calendar, ChevronDown, Download, Printer,
-  ChevronLeft, ChevronRight, BarChart2, TrendingUp, TrendingDown, 
+  Users, Search, Filter, Calendar, Download, Printer,
+  ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
   UserPlus, DollarSign, Mail, ArrowRight
 } from 'lucide-react';
 import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+  XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 
@@ -68,7 +68,7 @@ const CustomerReport: React.FC = () => {
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage] = useState(10);
   const [sortField, setSortField] = useState<'orders' | 'spent'>('spent');
   const [viewSection, setViewSection] = useState<'overview' | 'customers'>('overview');
 
@@ -460,7 +460,7 @@ const CustomerReport: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {currentCustomers.map((customer, index) => (
+                  {currentCustomers.map((customer) => (
                     <tr key={customer.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">#{customer.id}</div>
