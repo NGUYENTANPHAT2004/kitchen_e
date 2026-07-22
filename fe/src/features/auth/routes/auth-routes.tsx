@@ -1,5 +1,5 @@
 // src/features/auth/routes/authRoutes.tsx
-import type { RouteObject } from 'react-router-dom';
+import { Navigate, type RouteObject } from 'react-router-dom';
 import VerifyEmailPage from '../components/VerifyEmail/verify-email-page';
 import OAuthCallbackPage from '../pages/oauth-callback';
 import RegisterForm from '../components/Register/register-component';
@@ -12,6 +12,10 @@ export const authRoutes: RouteObject[] = [
   {
     path: 'auth',
     children: [
+      {
+        index: true,
+        element: <Navigate to="/auth/login" replace />
+      },
       {
         path: 'register',
         element: <RegisterForm />

@@ -298,7 +298,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const clearError = () => dispatch({ type: 'CLEAR_ERROR' });
+  const clearError = useCallback(() => dispatch({ type: 'CLEAR_ERROR' }), []);
 
   return (
     <AuthContext.Provider

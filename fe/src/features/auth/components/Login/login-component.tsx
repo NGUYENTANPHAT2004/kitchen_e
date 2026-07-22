@@ -192,7 +192,7 @@ const LoginForm: React.FC = () => {
             Chưa có tài khoản?{' '}
             <button
               type="button"
-              onClick={() => navigate('/auth/signup')}
+              onClick={() => navigate('/auth/register')}
               className="text-blue-600 hover:underline font-medium"
             >
               Đăng ký ngay

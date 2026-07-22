@@ -2,6 +2,7 @@ import React, { useReducer, useEffect, useRef } from 'react';
 import { cartService } from '../service/cart-service';
 import { CartContext } from './cart-context-value';
 import type { CartItem } from './cart-context-value';
+import { loadCartFromStorage } from './cart-storage';
 
 interface CartState {
   items: CartItem[];
@@ -54,22 +55,13 @@ function cartReducer(state: CartState, action: CartAction): CartState {
   }
 }
 
-function loadCartFromStorage(): CartState {
-  try {
-    const stored = localStorage.getItem(CART_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : { items: [] };
-  } catch {
-    return { items: [] };
-  }
-}
-
 function isLoggedIn(): boolean {
   const token = localStorage.getItem('token');
   return !!token && token !== 'undefined' && token !== 'null';
 }
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(cartReducer, undefined, loadCartFromStorage);
+  const [state, dispatch] = useReducer(cartReducer, { items: [] }, loadCartFromStorage);
   const pendingOps = useRef<Promise<void>>(Promise.resolve());
 
   // On mount: if logged in, sync cart from server (merge guest cart if any)
@@ -96,7 +88,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Persist to localStorage for guest users
   useEffect(() => {
     if (!isLoggedIn()) {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(state.items));
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ items: state.items }));
     }
   }, [state.items]);
 

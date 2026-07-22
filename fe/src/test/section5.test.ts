@@ -190,3 +190,35 @@ describe('#20b  CategoryManagement: isPending → isLoading (React Query v4)', (
     expect(mockMutation.isLoading).toBe(false);
   });
 });
+
+
+describe('#21 cart storage recovery', () => {
+  it('falls back to an empty cart when persisted data has no items array', async () => {
+    const { normalizeStoredCart } = await import('../features/cart/context/cart-storage');
+    expect(normalizeStoredCart({})).toEqual({ items: [] });
+    expect(normalizeStoredCart(null)).toEqual({ items: [] });
+  });
+
+  it('supports legacy item arrays and normalizes optional display fields', async () => {
+    const { normalizeStoredCart } = await import('../features/cart/context/cart-storage');
+    const result = normalizeStoredCart([{
+      id: 'cart-1',
+      productId: 'product-1',
+      name: 'Pan',
+      price: 100000,
+      quantity: 2,
+    }]);
+
+    expect(result).toEqual({
+      items: [{
+        id: 'cart-1',
+        productId: 'product-1',
+        name: 'Pan',
+        price: 100000,
+        quantity: 2,
+        image: '',
+        variant: '',
+      }],
+    });
+  });
+});

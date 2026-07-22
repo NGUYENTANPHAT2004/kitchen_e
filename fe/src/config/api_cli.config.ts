@@ -51,7 +51,7 @@ api.interceptors.response.use(
       localStorage.removeItem('user');
       toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       setTimeout(() => {
-        window.location.href = '/auth';
+        window.location.href = '/auth/login';
       }, 1000);
     } else if (status === 500) {
       toast.error('Đã xảy ra lỗi máy chủ. Vui lòng thử lại sau.');

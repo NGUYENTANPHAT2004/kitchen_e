@@ -141,7 +141,7 @@ const ClientHeader: React.FC<ClientHeaderProps> = ({ categories }) => {
 
       {/* Cart sidebar */}
       {showCart && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
           <div className="bg-white w-full max-w-md p-6 overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">Giỏ hàng {totalItems > 0 ? `(${totalItems})` : ''}</h2>

@@ -154,10 +154,13 @@ Nguồn chính thức:
 - Đồng bộ phí vận chuyển hiển thị với backend: tiêu chuẩn 30.000đ, nhanh 50.000đ, miễn phí từ 500.000đ.
 - Frontend không còn gửi tổng tiền và giá item để backend tin trực tiếp.
 - Tách AuthContext, CartContext và CategoriesContext khỏi provider component để Fast Refresh hoạt động ổn định; sửa cleanup timer và khởi tạo variant không gây cảnh báo hook.
+- Chuẩn hóa dữ liệu giỏ hàng lưu trong `localStorage` về `{ items: [...] }`, đồng thời phục hồi được dữ liệu legacy dạng mảng và fallback an toàn khi dữ liệu lỗi để reload không làm `CartProvider` crash.
+- Bổ sung index redirect `/auth -> /auth/login`, bỏ route `/auth` trùng và đổi redirect 401 sang `/auth/login` để refresh/session hết hạn không còn rơi vào màn hình trắng.
+- Ổn định tham chiếu `clearError` bằng `useCallback`, ngăn cleanup effect của form đăng nhập tạo vòng lặp render với lỗi `Maximum update depth exceeded`.
 
 ## 5. Kiểm thử hồi quy đã bổ sung
 
-Kết quả cuối: **8 backend suites / 34 tests pass**, **13 frontend tests pass**, production build và TypeScript build đều pass.
+Kết quả cuối: **8 backend suites / 34 tests pass**, **15 frontend tests pass**, production build và TypeScript build đều pass.
 
 - User schema và timestamps.
 - Thứ tự route literal/dynamic.
@@ -176,6 +179,8 @@ Kết quả cuối: **8 backend suites / 34 tests pass**, **13 frontend tests pa
 - Order đã thanh toán bị chặn hủy nhằm tránh tình trạng đã thu tiền nhưng hoàn kho như order chưa thanh toán.
 - Cancellation workflow claim trạng thái trước khi hoàn kho.
 - Review verified-purchase đã được kiểm thử theo quan hệ `Order -> OrderItem` và variant.
+- Cart storage malformed/legacy được phục hồi về reducer state hợp lệ, ngăn lỗi reload do `state.items` không tồn tại.
+- Route `/auth`, redirect 401 và callback `clearError` đã được kiểm tra lại bằng browser để xác nhận trang đăng nhập vẫn render sau reload.
 - Backend ESLint pass; frontend ESLint pass không còn error/warning.
 
 ## 6. Chức năng mới nên áp dụng tiếp

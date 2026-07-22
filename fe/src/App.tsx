@@ -65,12 +65,6 @@ const AppRoutes: React.FC = () => {
 
     ...authRoutes,
     
-
-    {
-      path: '/auth',
-      element: <Navigate to="/auth/login" replace />
-    },
-    
     // Client routes
     {
       path: '/shop',
