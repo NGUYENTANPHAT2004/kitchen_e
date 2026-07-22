@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Star, StarHalf, Heart, Plus, Minus } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useCart } from '../../../cart/context/cart-context';
+import { useCart } from '../../../cart/context/cart-hook';
 import { productService } from '../../services/productService';
 import { customizationService } from '../../../customizations/service/customizationService';
 import { urlUtils, api, endpoints } from '../../../../config/api_cli.config';
@@ -92,9 +92,9 @@ const AlwaysPanProductPageInner: React.FC = () => {
 
   // Set first variant when variants load
   useEffect(() => {
-    const variants: Variant[] = variantsData?.data?.variants || variantsData?.variants || [];
-    if (variants.length > 0 && !selectedVariant) {
-      setSelectedVariant(variants[0]);
+    const loadedVariants: Variant[] = variantsData?.data?.variants || variantsData?.variants || [];
+    if (loadedVariants.length > 0) {
+      setSelectedVariant(current => current || loadedVariants[0]);
     }
   }, [variantsData]);
 

@@ -1,6 +1,5 @@
 // models/Product.js
 const mongoose = require('mongoose');
-const slugify = require('slugify');
 const mongoosePaginate = require('mongoose-paginate-v2');
 const ProductSchema = new mongoose.Schema(
   {

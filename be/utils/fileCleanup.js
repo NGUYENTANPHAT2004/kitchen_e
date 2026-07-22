@@ -7,7 +7,6 @@ const ProductVariant = require('../models/ProductVariant');
 const Category = require('../models/Category');
 const Review = require('../models/Review');
 const User = require('../models/User');
-const imageService = require('./imageService');
 
 // Initialize S3 client if using S3 storage
 let s3;

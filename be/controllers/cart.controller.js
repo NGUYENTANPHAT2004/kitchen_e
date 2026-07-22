@@ -7,7 +7,6 @@ const FlashSaleItem = require('../models/FlashSaleItem');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../middlewares/async.middleware');
-const mongoose = require('mongoose');
 
 /**
  * @desc    Get user's cart

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { useCart } from '../../cart/context/cart-context';
+import { useCart } from '../../cart/context/cart-hook';
 import orderService from '../services/order-service';
 import type { ShippingForm, VoucherResult } from '../interface/interface';
 

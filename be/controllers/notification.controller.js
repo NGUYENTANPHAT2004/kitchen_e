@@ -11,7 +11,7 @@ const notificationService = require('../services/notification.service');
  * @route     GET /api/notifications
  * @access    Private
  */
-exports.getUserNotifications = asyncHandler(async (req, res, next) => {
+exports.getUserNotifications = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, isRead, isDismissed, type } = req.query;
   
   const query = { userId: req.user.id };
@@ -108,7 +108,7 @@ exports.markAsRead = asyncHandler(async (req, res, next) => {
  * @route     PUT /api/notifications/read-all
  * @access    Private
  */
-exports.markAllAsRead = asyncHandler(async (req, res, next) => {
+exports.markAllAsRead = asyncHandler(async (req, res) => {
   const result = await Notification.markAllAsRead(req.user.id);
   
   return ApiResponse.success(res, {
@@ -163,7 +163,7 @@ exports.deleteNotification = asyncHandler(async (req, res, next) => {
  * @route     DELETE /api/notifications/read
  * @access    Private
  */
-exports.deleteReadNotifications = asyncHandler(async (req, res, next) => {
+exports.deleteReadNotifications = asyncHandler(async (req, res) => {
   const result = await Notification.deleteMany({
     userId: req.user.id,
     isRead: true
@@ -179,7 +179,7 @@ exports.deleteReadNotifications = asyncHandler(async (req, res, next) => {
  * @route     DELETE /api/notifications
  * @access    Private
  */
-exports.deleteAllNotifications = asyncHandler(async (req, res, next) => {
+exports.deleteAllNotifications = asyncHandler(async (req, res) => {
   const result = await Notification.deleteMany({
     userId: req.user.id
   });
@@ -258,7 +258,7 @@ exports.createBulkNotifications = asyncHandler(async (req, res, next) => {
  * @route     GET /api/notifications/unread-count
  * @access    Private
  */
-exports.getUnreadCount = asyncHandler(async (req, res, next) => {
+exports.getUnreadCount = asyncHandler(async (req, res) => {
   const count = await notificationService.getUnreadCount(req.user.id);
   
   return ApiResponse.success(res, { count }, 'Số lượng thông báo chưa đọc');

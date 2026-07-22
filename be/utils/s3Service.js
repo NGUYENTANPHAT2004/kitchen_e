@@ -13,7 +13,7 @@ const imageService = {
    * @param {Object} options - Processing options
    * @returns {Promise<Object>} - Processed image info
    */
-  async uploadImage(file, folder = 'categories', options = {}) {
+  async uploadImage(file, _folder = 'categories', _options = {}) {
     try {
       if (!file) {
         throw new Error('No file provided');
@@ -158,8 +158,7 @@ const imageService = {
       const {
         width = 800,
         height = 600,
-        quality = 85,
-        format = 'jpeg'
+        quality = 85
       } = options;
 
       const processedBuffer = await sharp(buffer)
@@ -207,7 +206,7 @@ const imageService = {
       }
 
       // Create thumbnail buffer
-      const thumbnailBuffer = await sharp(file.buffer)
+      await sharp(file.buffer)
         .resize(size, size, {
           fit: 'cover',
           position: 'center'

@@ -6,7 +6,6 @@ const ProductVariant = require('../models/ProductVariant');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../middlewares/async.middleware');
-const mongoose = require('mongoose');
 
 /**
  * @desc    Get all items in a bundle

@@ -1,11 +1,8 @@
 // controllers/product.controller.js
 const Product = require('../models/Product');
-const ProductVariant = require('../models/ProductVariant');
 const Category = require('../models/Category');
-const Review = require('../models/Review');
 const FlashSaleItem = require('../models/FlashSaleItem');
 const imageService = require('../utils/imageService');
-const { getFileUrl } = require('../middlewares/upload.middleware');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../middlewares/async.middleware');

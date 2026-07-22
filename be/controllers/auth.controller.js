@@ -1,6 +1,5 @@
 // controllers/auth.controller.js - FIXED VERSION
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const User = require('../models/User');
 const ApiError = require('../utils/apiError');
@@ -185,7 +184,7 @@ exports.login = (req, res, next) => {
  * @route   GET /api/auth/logout
  * @access  Private
  */
-exports.logout = asyncHandler(async (req, res, next) => {
+exports.logout = asyncHandler(async (req, res) => {
   // 🔧 FIX 9: Enhanced logout with user activity tracking
   try {
     if (req.user) {

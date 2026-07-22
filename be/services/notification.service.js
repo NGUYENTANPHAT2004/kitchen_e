@@ -1,7 +1,6 @@
 // services/notification.service.js
 const Notification = require('../models/Notification');
 const socketService = require('./socket.service');
-const emailService = require('../utils/sendEmail');
 
 /**
  * Service xử lý thông báo - kết hợp database và socket
@@ -40,17 +39,8 @@ class NotificationService {
       
       // Gửi email nếu kênh email được bật
       if (notification.channels.email) {
-        try {
-          // Giả định rằng bạn có email service
-          // await emailService.sendNotificationEmail(notification);
-          
-          // Cập nhật trạng thái đã gửi qua email
-          notification.deliveryStatus.email.delivered = true;
-          notification.deliveryStatus.email.deliveredAt = new Date();
-          await notification.save();
-        } catch (emailError) {
-          console.error('Error sending notification email:', emailError);
-        }
+        // Keep delivery pending until a real email provider/template adapter runs.
+        console.warn('Notification email delivery is requested but no adapter is configured.');
       }
       
       // TODO: Xử lý các kênh khác (push, sms) tương tự

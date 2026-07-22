@@ -2,7 +2,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useCart } from '../../cart/context/cart-context';
+import { useCart } from '../../cart/context/cart-hook';
 import { productService } from '../../products/services/productService';
 import { categoryService } from '../service/categoryService';
 import { urlUtils } from '../../../config/api_cli.config';

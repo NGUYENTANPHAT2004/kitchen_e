@@ -1,8 +1,9 @@
 // controllers/review.controller.js
 const Review = require('../models/Review');
 const Product = require('../models/Product');
-const User = require('../models/User');
+const ProductVariant = require('../models/ProductVariant');
 const Order = require('../models/Order');
+const OrderItem = require('../models/OrderItem');
 const asyncHandler = require('../middlewares/async.middleware');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
@@ -11,7 +12,7 @@ const mongoose = require('mongoose');
 // @desc      Get all reviews
 // @route     GET /api/reviews
 // @access    Public
-exports.getReviews = asyncHandler(async (req, res, next) => {
+exports.getReviews = asyncHandler(async (req, res) => {
   const { productId, userId, rating, verified, page = 1, limit = 10, sort = '-createdAt' } = req.query;
   const query = {};
   
@@ -109,17 +110,22 @@ exports.createReview = asyncHandler(async (req, res, next) => {
   let isVerifiedPurchase = false;
   let orderId = null;
   
-  // Simple version - in a real app, you would implement more complex logic
-  // to find user's orders containing this product
-  const orders = await Order.find({
+  const deliveredOrders = await Order.find({
     userId: req.user.id,
-    'items.productId': req.body.productId,
     status: 'delivered'
-  }).sort('-createdAt');
-  
-  if (orders.length > 0) {
+  }).select('_id');
+  const deliveredOrderIds = deliveredOrders.map(order => order._id);
+  const purchasedItem = deliveredOrderIds.length > 0
+    ? await OrderItem.findOne({
+      orderId: { $in: deliveredOrderIds },
+      productId: req.body.productId,
+      ...(req.body.productVariantId ? { variantId: req.body.productVariantId } : {})
+    }).select('orderId')
+    : null;
+
+  if (purchasedItem) {
     isVerifiedPurchase = true;
-    orderId = orders[0]._id;
+    orderId = purchasedItem.orderId;
   }
   
   // Create review
@@ -147,11 +153,15 @@ exports.updateReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError(`Bạn không có quyền cập nhật đánh giá này`, 401));
   }
   
-  // Don't allow updating verified status or product/user
-  const {
-    isVerifiedPurchase, userId, productId, orderId, isApproved,
-    isRejected, rejectionReason, ...updateData
-  } = req.body;
+  // Don't allow updating verified status or product/user.
+  const { isApproved, isRejected, rejectionReason } = req.body;
+  const protectedFields = new Set([
+    'isVerifiedPurchase', 'userId', 'productId', 'productVariantId', 'orderId',
+    'isApproved', 'isRejected', 'rejectionReason'
+  ]);
+  const updateData = Object.fromEntries(
+    Object.entries(req.body).filter(([key]) => !protectedFields.has(key))
+  );
   
   // If admin is updating, allow updating approval status
   if (req.user.role === 'admin') {
@@ -367,7 +377,7 @@ exports.getProductReviews = asyncHandler(async (req, res, next) => {
 // @desc      Get pending reviews (admin)
 // @route     GET /api/reviews/pending
 // @access    Private (Admin)
-exports.getPendingReviews = asyncHandler(async (req, res, next) => {
+exports.getPendingReviews = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   
   const query = {
@@ -403,7 +413,7 @@ exports.getPendingReviews = asyncHandler(async (req, res, next) => {
 // @desc      Get reported reviews (admin)
 // @route     GET /api/reviews/reported
 // @access    Private (Admin)
-exports.getReportedReviews = asyncHandler(async (req, res, next) => {
+exports.getReportedReviews = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   
   const query = {

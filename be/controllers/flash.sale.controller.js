@@ -10,7 +10,7 @@ const ApiResponse = require('../utils/apiResponse');
 // @desc      Get all flash sales
 // @route     GET /api/flash-sales
 // @access    Public
-exports.getFlashSales = asyncHandler(async (req, res, next) => {
+exports.getFlashSales = asyncHandler(async (req, res) => {
   // Support for query parameters
   const { status, active, upcoming, page = 1, limit = 10 } = req.query;
   const query = { isDeleted: false };
@@ -237,8 +237,10 @@ exports.updateFlashSaleItem = asyncHandler(async (req, res, next) => {
     return next(new ApiError(`Không tìm thấy sản phẩm flash sale với id ${req.params.itemId}`, 404));
   }
   
-  // Don't allow changing product or variant
-  const { productId, variantId, ...updateData } = req.body;
+  // Don't allow changing product or variant.
+  const updateData = { ...req.body };
+  delete updateData.productId;
+  delete updateData.variantId;
   
   flashSaleItem = await FlashSaleItem.findByIdAndUpdate(
     req.params.itemId,
@@ -320,7 +322,7 @@ exports.updateFlashSaleStatus = asyncHandler(async (req, res, next) => {
 // @desc      Get active flash sales
 // @route     GET /api/flash-sales/active
 // @access    Public
-exports.getActiveFlashSales = asyncHandler(async (req, res, next) => {
+exports.getActiveFlashSales = asyncHandler(async (req, res) => {
   const now = new Date();
   
   const flashSales = await FlashSale.find({

@@ -1,5 +1,5 @@
 import { api } from '../../../config/api_cli.config';
-import type { CartItem } from '../context/cart-context';
+import type { CartItem } from '../context/cart-context-value';
 
 interface BackendCartItem {
   _id: string;

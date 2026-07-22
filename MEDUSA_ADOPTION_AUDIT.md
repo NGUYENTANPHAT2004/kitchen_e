@@ -1,6 +1,6 @@
 # Báo cáo đối chiếu Medusa và Kitchen E
 
-Ngày cập nhật: **21/07/2026**
+Ngày cập nhật: **22/07/2026**
 
 ## 1. Kết luận điều hành
 
@@ -95,6 +95,7 @@ Nguồn chính thức:
 - Khai báo các field đang được middleware/controller ghi: lastActivity, avatarPath, isLocked, lockUntil.
 - Đưa route literal lên trước route động ở notifications, categories, bundles và reviews.
 - Bổ sung import ApiError bị thiếu trong voucher router.
+- Sửa kiểm tra review đã mua: đối chiếu `OrderItem` thuộc order đã giao, hỗ trợ cả variant, thay vì đọc field `items.productId` không tồn tại trong `Order`.
 
 ### 4.2 Inventory và flash sale
 
@@ -152,10 +153,11 @@ Nguồn chính thức:
 - Đồng bộ shippingAddress theo contract backend.
 - Đồng bộ phí vận chuyển hiển thị với backend: tiêu chuẩn 30.000đ, nhanh 50.000đ, miễn phí từ 500.000đ.
 - Frontend không còn gửi tổng tiền và giá item để backend tin trực tiếp.
+- Tách AuthContext, CartContext và CategoriesContext khỏi provider component để Fast Refresh hoạt động ổn định; sửa cleanup timer và khởi tạo variant không gây cảnh báo hook.
 
 ## 5. Kiểm thử hồi quy đã bổ sung
 
-Kết quả cuối: **7 backend suites / 32 tests pass**, **13 frontend tests pass**, production build và TypeScript build đều pass.
+Kết quả cuối: **8 backend suites / 34 tests pass**, **13 frontend tests pass**, production build và TypeScript build đều pass.
 
 - User schema và timestamps.
 - Thứ tự route literal/dynamic.
@@ -173,6 +175,8 @@ Kết quả cuối: **7 backend suites / 32 tests pass**, **13 frontend tests pa
 - Payment completed đồng bộ sang order, và webhook đã ghi nhận nhưng bị gián đoạn có thể retry.
 - Order đã thanh toán bị chặn hủy nhằm tránh tình trạng đã thu tiền nhưng hoàn kho như order chưa thanh toán.
 - Cancellation workflow claim trạng thái trước khi hoàn kho.
+- Review verified-purchase đã được kiểm thử theo quan hệ `Order -> OrderItem` và variant.
+- Backend ESLint pass; frontend ESLint pass không còn error/warning.
 
 ## 6. Chức năng mới nên áp dụng tiếp
 
@@ -212,8 +216,9 @@ Kết quả cuối: **7 backend suites / 32 tests pass**, **13 frontend tests pa
 - Chưa chạy full Docker stack và chưa chạy concurrency test với database thật.
 - Idempotency record và order transaction chưa dùng transactional outbox chung.
 - Event/subscriber cho email, socket, analytics và AI chưa được tách hoàn toàn.
-- Backend lint còn **48 lỗi cũ** ngoài phạm vi batch; có cả cấu hình parser cũ không hiểu một số cú pháp hiện đại.
-- Frontend còn 5 lint warning và cảnh báo bundle lớn.
+- AI service đã dùng fallback cấu hình `pythonAIServiceURL`; notification email không còn đánh dấu delivered khi chưa có adapter gửi email thật.
+- Backend ESLint đã pass với cấu hình parser hỗ trợ class fields và cú pháp hiện đại.
+- Frontend ESLint đã pass với **0 error / 0 warning**; production build vẫn có cảnh báo bundle chính khoảng 1,5 MB và các module bên thứ ba chứa directive `use client`, không làm build thất bại.
 - Nhiều chuỗi tiếng Việt cũ trong source đang bị mojibake; nên có một batch riêng để sửa encoding và thêm kiểm tra UTF-8.
 
 ## 8. Tiêu chí hoàn thành giai đoạn tiếp theo

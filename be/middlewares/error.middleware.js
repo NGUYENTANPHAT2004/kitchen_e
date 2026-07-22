@@ -6,7 +6,7 @@ const { logger } = require('./logger.middleware');
  * Middleware xử lý lỗi trung tâm
  * Xử lý tất cả các lỗi và gửi phản hồi phù hợp
  */
-const errorHandler = (err, req, res, next) => {
+const errorHandler = (err, req, res, _next) => {
   let error = { ...err };
   error.message = err.message;
   error.stack = err.stack;

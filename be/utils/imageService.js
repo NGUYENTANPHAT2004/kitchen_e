@@ -1,6 +1,5 @@
 // utils/imageService.js - FIXED PATH HANDLING
 const { deleteFile, getFileUrl, getFallbackImageUrl } = require('../middlewares/upload.middleware');
-const sharp = require('sharp'); // Optional: for image processing
 const path = require('path');
 
 /**
@@ -20,7 +19,7 @@ class ImageService {
   /**
    * 🔧 FIX: Enhanced uploadImage with proper path extraction
    */
-  async uploadImage(file, folder = 'uploads', options = {}) {
+  async uploadImage(file, folder = 'uploads', _options = {}) {
     try {
       console.log('🔍 ImageService: Processing upload for folder:', folder);
       console.log('🔍 File object received:', {

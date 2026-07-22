@@ -1,6 +1,6 @@
 // src/features/auth/hooks/useAuth.ts
 import { useContext } from 'react';
-import { AuthContext } from '../contexts/auth-context';
+import { AuthContext } from '../contexts/auth-context-value';
 
 /**
  * Custom hook to use the auth context

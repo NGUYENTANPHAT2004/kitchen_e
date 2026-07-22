@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ShoppingCart, Search, User, Menu, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useCart } from '../../../features/cart/context/cart-context';
+import { useCart } from '../../../features/cart/context/cart-hook';
 import { urlUtils } from '../../../config/api_cli.config';
 
 interface CategoryType {

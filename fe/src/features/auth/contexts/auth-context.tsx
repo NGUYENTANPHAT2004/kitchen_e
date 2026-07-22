@@ -1,4 +1,4 @@
-import React, { createContext, useReducer, useEffect, useCallback, useRef } from 'react';
+import React, { useReducer, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type {
   AuthState,
@@ -9,6 +9,7 @@ import type {
 } from '../interfaces/auth-interfaces';
 import type { User } from '../../../types/user';
 import authService from '../services/auth-service';
+import { AuthContext } from './auth-context-value';
 
 const initialState: AuthState = {
   isAuthenticated: false,
@@ -28,24 +29,6 @@ type AuthAction =
   | { type: 'SET_LOADING' }
   | { type: 'TOKEN_EXPIRED' }
   | { type: 'NETWORK_ERROR'; payload: string };
-
-interface AuthContextProps {
-  state: AuthState;
-  login: (data: LoginRequest) => Promise<void>;
-  register: (data: RegisterRequest) => Promise<void>;
-  logout: () => Promise<void>;
-  updateUser: (data: UpdateUserRequest) => Promise<void>;
-  updatePassword: (data: UpdatePasswordRequest) => Promise<void>;
-  forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;
-  resetPassword: (token: string, password: string) => Promise<{ success: boolean; message: string }>;
-  verifyEmail: (token: string) => Promise<{ success: boolean; message: string }>;
-  resendVerification: () => Promise<{ success: boolean; message: string }>;
-  clearError: () => void;
-  refreshUser: () => Promise<void>;
-  loadUser: () => Promise<void>;
-}
-
-export const AuthContext = createContext<AuthContextProps | undefined>(undefined);
 
 function authReducer(state: AuthState, action: AuthAction): AuthState {
   switch (action.type) {
@@ -100,11 +83,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     isMounted.current = true;
+    const timeouts = retryTimeouts.current;
     return () => {
       isMounted.current = false;
       if (tokenCheckInterval.current) clearInterval(tokenCheckInterval.current);
-      retryTimeouts.current.forEach(clearTimeout);
-      retryTimeouts.current.clear();
+      timeouts.forEach(clearTimeout);
+      timeouts.clear();
     };
   }, []);
 

@@ -1,12 +1,10 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { categoryService } from '../../../features/category/service/categoryService';
 import type { Category } from '../../../features/category/interface/interface';
+import { CategoriesContext } from './categories-context';
 import ClientHeader from './ClientHeader';
 import ClientFooter from './ClientFooter';
-
-const CategoriesContext = createContext<Category[]>([]);
-export const useCategories = () => useContext(CategoriesContext);
 
 interface ClientLayoutProps {
   children: React.ReactNode;

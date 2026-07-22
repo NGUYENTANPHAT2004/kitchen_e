@@ -477,17 +477,14 @@ exports.updateRecipe = asyncHandler(async (req, res) => {
     // Delete step images from storage
     for (const stepImageInfo of stepImagesToRemove) {
       try {
-        let stepIndex, imageUrl, imagePath;
+        let stepIndex;
         
         if (typeof stepImageInfo === 'object') {
           stepIndex = stepImageInfo.stepIndex;
-          imageUrl = stepImageInfo.imageUrl;
-          imagePath = stepImageInfo.imagePath;
         } else {
-          // Handle string format "stepIndex:imageUrl"
-          const [idx, url] = stepImageInfo.split(':');
+          // Handle string format "stepIndex:imageUrl".
+          const [idx] = stepImageInfo.split(':');
           stepIndex = parseInt(idx, 10);
-          imageUrl = url;
         }
         
         // Find the instruction by step index

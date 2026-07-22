@@ -1,7 +1,5 @@
 // controllers/bundle.controller.js
 const Bundle = require('../models/Bundle');
-const BundleItem = require('../models/BundleItem');
-const Product = require('../models/Product');
 const imageService = require('../utils/imageService');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');

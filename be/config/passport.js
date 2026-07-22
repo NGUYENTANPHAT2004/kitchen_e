@@ -4,10 +4,8 @@ const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { Strategy: LocalStrategy } = require('passport-local');
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const { Strategy: FacebookStrategy } = require('passport-facebook');
-const mongoose = require('mongoose');
 const crypto = require('crypto'); // 🔧 ADD: Import crypto
 const User = require('../models/User');
-const ApiError = require('../utils/apiError');
 
 // 🔧 FIX 1: Add environment validation
 const requiredEnvVars = [

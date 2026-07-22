@@ -4,7 +4,7 @@ import {
   Home, Package, Users, ShoppingCart, Tag, Settings,
   BarChart2, FileText, Book, Gift, LogOut, Menu, X, ChevronDown, ChevronRight, Bell
 } from 'lucide-react';
-import { AuthContext } from '../../features/auth/contexts/auth-context';
+import { AuthContext } from '../../features/auth/contexts/auth-context-value';
 import { urlUtils } from '../../config/api_cli.config';
 
 interface MenuItem {

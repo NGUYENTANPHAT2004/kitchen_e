@@ -7,7 +7,7 @@ const config = require('../config/default');
  */
 class AIService {
   constructor() {
-    this.baseUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    this.baseUrl = process.env.AI_SERVICE_URL || config.pythonAIServiceURL;
     this.axiosInstance = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000, // 30 seconds

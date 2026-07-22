@@ -2,13 +2,13 @@ import React from 'react';
 import { Heart, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useCart } from '../../features/cart/context/cart-context';
+import { useCart } from '../../features/cart/context/cart-hook';
 import { productService } from '../../features/products/services/productService';
 import { categoryService } from '../../features/category/service/categoryService';
 import { urlUtils } from '../../config/api_cli.config';
 import type { Product } from '../../features/products/services/productService';
 import ClientLayout from './client/ClientLayout';
-import { useCategories } from './client/ClientLayout';
+import { useCategories } from './client/categories-context';
 
 const FALLBACK_PRODUCT = 'https://i.imgur.com/WLUKr0K.jpg';
 const FALLBACK_CATEGORY = 'https://i.imgur.com/CXBkVJW.jpg';

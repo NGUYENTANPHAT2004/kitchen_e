@@ -2,11 +2,9 @@
 const Product = require('../models/Product');
 const ProductVariant = require('../models/ProductVariant');
 const imageService = require('../utils/imageService');
-const { getFileUrl } = require('../middlewares/upload.middleware');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../middlewares/async.middleware');
-const mongoose = require('mongoose');
 
 /**
  * @desc    Get all variants for a product

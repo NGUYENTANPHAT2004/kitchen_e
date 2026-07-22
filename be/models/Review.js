@@ -228,7 +228,7 @@ ReviewSchema.methods.reportReview = async function(userId, reason) {
 };
 
 // Method to approve a review
-ReviewSchema.methods.approveReview = async function(adminId) {
+ReviewSchema.methods.approveReview = async function(_adminId) {
   this.isApproved = true;
   this.isRejected = false;
   this.rejectionReason = '';
@@ -237,7 +237,7 @@ ReviewSchema.methods.approveReview = async function(adminId) {
 };
 
 // Method to reject a review
-ReviewSchema.methods.rejectReview = async function(adminId, reason) {
+ReviewSchema.methods.rejectReview = async function(_adminId, reason) {
   this.isApproved = false;
   this.isRejected = true;
   this.rejectionReason = reason || 'Violated content guidelines';

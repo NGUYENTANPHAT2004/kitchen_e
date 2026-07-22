@@ -331,7 +331,7 @@ exports.staffOrAdmin = [exports.protect, exports.authorize('staff', 'admin')];
 exports.verifiedUsersOnly = [exports.protect, exports.requireEmailVerification];
 
 // 🔧 NEW: Debug middleware functions
-exports.debugJWT = (req, res, next) => {
+exports.debugJWT = (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     
