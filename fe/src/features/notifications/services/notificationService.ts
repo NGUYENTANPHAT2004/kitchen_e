@@ -10,6 +10,7 @@ const notificationService = {
     if (params.isRead !== undefined) query.set('isRead', String(params.isRead));
     if (params.isDismissed !== undefined) query.set('isDismissed', String(params.isDismissed));
     if (params.type) query.set('type', params.type);
+    if (params.search) query.set('search', params.search);
     const response = await api.get(`${endpoints.notifications.base}?${query.toString()}`);
     const data = response.data?.data ?? response.data;
     return {

@@ -10,7 +10,7 @@ export const useVouchers = (params: { search?: string; isActive?: boolean; disco
   const query = useQuery(
     ['vouchers', { ...params, page, limit }],
     () => voucherService.getVouchers({ ...params, page, limit }),
-    { keepPreviousData: true }
+    { keepPreviousData: true, retry: false }
   );
 
   return { ...query, page, setPage, limit };

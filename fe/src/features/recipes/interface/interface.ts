@@ -6,7 +6,7 @@ export interface RecipeIngredient {
   notes?: string;
 }
 
-export type IngredientInput = Omit<RecipeIngredient, 'id'>;
+export type IngredientInput = Omit<RecipeIngredient, "id">;
 export interface RecipeInstruction {
   step: number;
   description: string;
@@ -33,12 +33,20 @@ export interface Recipe {
   preparationTime?: number;
   cookingTime?: number;
   servings?: number;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   ingredients: RecipeIngredient[];
   instructions: RecipeInstruction[];
   nutritionInfo?: RecipeNutrition;
   cuisineType?: string;
-  mealType: 'breakfast' | 'lunch' | 'dinner' | 'dessert' | 'snack' | 'appetizer' | 'drink' | 'other';
+  mealType:
+    | "breakfast"
+    | "lunch"
+    | "dinner"
+    | "dessert"
+    | "snack"
+    | "appetizer"
+    | "drink"
+    | "other";
   tags: string[];
   authorId: { _id: string; name: string };
   authorName?: string;
@@ -53,6 +61,14 @@ export interface Recipe {
   videoDemonstration?: string;
   createdAt: string;
   updatedAt: string;
+  relatedProducts?: {
+    product: {
+      _id: string;
+      name: string;
+      basePrice?: number;
+      images?: { url: string }[];
+    } | null;
+  }[];
 }
 
 export interface RecipeFormData {
@@ -61,7 +77,7 @@ export interface RecipeFormData {
   preparationTime?: number;
   cookingTime?: number;
   servings?: number;
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: "easy" | "medium" | "hard";
   ingredients?: IngredientInput[];
   instructions?: RecipeInstruction[];
   nutritionInfo?: RecipeNutrition;

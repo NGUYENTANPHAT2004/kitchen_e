@@ -41,6 +41,7 @@ export interface NotificationPagination {
 }
 
 export interface NotificationListParams {
+  search?: string;
   page?: number;
   limit?: number;
   isRead?: boolean;

@@ -1,5 +1,7 @@
 // models/Notification.js
 const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
+const { unexpiredNotifications } = require('../utils/notification-query');
 
 const NotificationSchema = new mongoose.Schema(
   {
@@ -215,10 +217,7 @@ NotificationSchema.statics.getUnreadNotifications = async function(userId) {
     userId,
     isRead: false,
     isDismissed: false,
-    $or: [
-      { expiresAt: { $exists: false } },
-      { expiresAt: { $gt: new Date() } }
-    ]
+    ...unexpiredNotifications()
   }).sort({ createdAt: -1 });
 };
 
@@ -257,5 +256,7 @@ NotificationSchema.index({ expiresAt: 1 });
 NotificationSchema.index({ type: 1 });
 NotificationSchema.index({ 'metadata.orderId': 1 });
 NotificationSchema.index({ 'metadata.productId': 1 });
+
+NotificationSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('Notification', NotificationSchema);

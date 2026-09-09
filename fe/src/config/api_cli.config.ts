@@ -1,12 +1,20 @@
-import axios from 'axios';
-import { toast } from 'react-hot-toast';
-import type { AxiosInstance, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios from "axios";
+import { toast } from "react-hot-toast";
+import type {
+  AxiosInstance,
+  AxiosResponse,
+  AxiosError,
+  InternalAxiosRequestConfig,
+} from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-const API_VERSION = import.meta.env.VITE_API_VERSION || 'v1';
-const STORAGE_TYPE = import.meta.env.VITE_STORAGE_TYPE || 'local';
-const AWS_BUCKET = import.meta.env.VITE_AWS_BUCKET || '';
-const AWS_REGION = import.meta.env.VITE_AWS_REGION || '';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
+  /\/$/,
+  ""
+);
+const API_VERSION = import.meta.env.VITE_API_VERSION || "v1";
+const STORAGE_TYPE = import.meta.env.VITE_STORAGE_TYPE || "local";
+const AWS_BUCKET = import.meta.env.VITE_AWS_BUCKET || "";
+const AWS_REGION = import.meta.env.VITE_AWS_REGION || "";
 
 const API_ENDPOINT = `${API_BASE_URL}/api`;
 
@@ -14,18 +22,18 @@ export const api: AxiosInstance = axios.create({
   baseURL: API_ENDPOINT,
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem("token");
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     if (import.meta.env.DEV) {
-      console.log('API Request:', {
+      console.log("API Request:", {
         method: config.method?.toUpperCase(),
         url: config.url,
         params: config.params,
@@ -39,24 +47,34 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response: AxiosResponse): AxiosResponse => {
     if (import.meta.env.DEV) {
-      console.log('API Response:', { status: response.status, url: response.config.url });
+      console.log("API Response:", {
+        status: response.status,
+        url: response.config.url,
+      });
     }
     return response;
   },
   (error: AxiosError) => {
     const status = error.response?.status ?? null;
 
-    if (status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-      setTimeout(() => {
-        window.location.href = '/auth/login';
-      }, 1000);
+    if (
+      status === 401 &&
+      !/\/auth\/(login|register|forgot-password|reset-password)/.test(
+        error.config?.url || ""
+      )
+    ) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      toast.error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      if (!window.location.pathname.startsWith("/auth/")) {
+        window.location.href = `/auth/login?redirect=${encodeURIComponent(
+          window.location.pathname + window.location.search
+        )}`;
+      }
     } else if (status === 500) {
-      toast.error('Đã xảy ra lỗi máy chủ. Vui lòng thử lại sau.');
+      toast.error("Đã xảy ra lỗi máy chủ. Vui lòng thử lại sau.");
     } else if (!status) {
-      toast.error('Lỗi mạng. Vui lòng kiểm tra kết nối internet.');
+      toast.error("Không thể kết nối máy chủ.", { id: "network-error" });
     }
 
     return Promise.reject(error);
@@ -67,25 +85,26 @@ export const urlUtils = {
   getFullImageUrl(imagePath: string | null | undefined): string | null {
     if (!imagePath) return null;
 
-    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
       return imagePath;
     }
+    if (imagePath.startsWith("/images/")) return imagePath;
 
-    const cleanPath = imagePath.replace(/^\/+/, '');
+    const cleanPath = imagePath.replace(/^\/+/, "");
 
-    if (STORAGE_TYPE === 's3') {
+    if (STORAGE_TYPE === "s3") {
       if (!AWS_BUCKET || !AWS_REGION) return null;
       return `https://${AWS_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${cleanPath}`;
     }
 
-    const pathWithPrefix = cleanPath.startsWith('uploads/')
+    const pathWithPrefix = cleanPath.startsWith("uploads/")
       ? cleanPath
       : `uploads/${cleanPath}`;
     return `${API_BASE_URL}/${pathWithPrefix}`;
   },
 
   getFallbackImageUrl(): string {
-    return `${API_BASE_URL}/uploads/fallback/no-image.png`;
+    return "/images/product-placeholder.svg";
   },
 
   preloadImage(imageUrl: string): Promise<boolean> {
@@ -106,18 +125,22 @@ export const uploadUtils = {
     const errors: string[] = [];
     const maxSize = options.maxSize ?? 10 * 1024 * 1024;
     const allowedTypes = options.allowedTypes ?? [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'image/gif',
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/gif",
     ];
 
     if (file.size > maxSize) {
-      errors.push(`Kích thước tệp quá lớn. Tối đa: ${maxSize / (1024 * 1024)}MB`);
+      errors.push(
+        `Kích thước tệp quá lớn. Tối đa: ${maxSize / (1024 * 1024)}MB`
+      );
     }
     if (!allowedTypes.includes(file.type)) {
-      errors.push(`Loại tệp không hợp lệ. Chấp nhận: ${allowedTypes.join(', ')}`);
+      errors.push(
+        `Loại tệp không hợp lệ. Chấp nhận: ${allowedTypes.join(", ")}`
+      );
     }
 
     return { isValid: errors.length === 0, errors };
@@ -135,13 +158,16 @@ export const uploadUtils = {
   createFormData(
     data: object,
     files?: File | File[],
-    fileFieldName = 'images'
+    fileFieldName = "images"
   ): FormData {
     const formData = new FormData();
 
     Object.entries(data).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
-        formData.append(key, typeof value === 'boolean' ? value.toString() : String(value));
+        formData.append(
+          key,
+          typeof value === "boolean" ? value.toString() : String(value)
+        );
       }
     });
 
@@ -156,27 +182,26 @@ export const uploadUtils = {
 
 export const endpoints = {
   auth: {
-    login: '/auth/login',
-    register: '/auth/register',
-    refresh: '/auth/refresh',
-    logout: '/auth/logout',
-    profile: '/auth/profile',
+    login: "/auth/login",
+    register: "/auth/register",
+    logout: "/auth/logout",
+    profile: "/auth/me",
   },
 
   categories: {
-    base: '/categories',
-    featured: '/categories/featured',
+    base: "/categories",
+    featured: "/categories/featured",
     byId: (id: string) => `/categories/${id}`,
     products: (id: string) => `/categories/${id}/products`,
     restore: (id: string) => `/categories/${id}/restore`,
-    reorder: '/categories/reorder',
+    reorder: "/categories/reorder",
   },
 
   products: {
-    base: '/products',
-    featured: '/products/featured',
-    bestSelling: '/products/best-selling',
-    search: '/products/search',
+    base: "/products",
+    featured: "/products/featured",
+    bestSelling: "/products/best-selling",
+    search: "/products/search",
     byId: (id: string) => `/products/${id}`,
     restore: (id: string) => `/products/${id}/restore`,
     variants: (productId: string) => `/products/${productId}/variants`,
@@ -190,35 +215,35 @@ export const endpoints = {
   },
 
   users: {
-    base: '/users',
+    base: "/users",
     byId: (id: string) => `/users/${id}`,
-    profile: '/users/profile',
+    profile: "/users/profile",
   },
 
   bundles: {
-    base: '/bundles',
-    featured: '/bundles/featured',
-    active: '/bundles/active',
+    base: "/bundles",
+    featured: "/bundles/featured",
+    active: "/bundles/active",
     byId: (id: string) => `/bundles/${id}`,
     restore: (id: string) => `/bundles/${id}/restore`,
     items: (bundleId: string) => `/bundles/${bundleId}/items`,
   },
 
   notifications: {
-    base: '/notifications',
+    base: "/notifications",
     byId: (id: string) => `/notifications/${id}`,
     read: (id: string) => `/notifications/${id}/read`,
     dismiss: (id: string) => `/notifications/${id}/dismiss`,
-    bulk: '/notifications/bulk',
+    bulk: "/notifications/bulk",
   },
 
   ai: {
-    chat: '/ai/chat',
-    chatHistory: '/ai/chat/history',
-    frequentQueries: '/ai/chat/frequent-queries',
-    intentDistribution: '/ai/analytics/intent-distribution',
-    feedbackStats: '/ai/analytics/feedback-stats',
-    personalized: '/ai/recommendations/personalized',
+    chat: "/ai/chat",
+    chatHistory: "/ai/chat/history",
+    frequentQueries: "/ai/chat/frequent-queries",
+    intentDistribution: "/ai/analytics/intent-distribution",
+    feedbackStats: "/ai/analytics/feedback-stats",
+    personalized: "/ai/recommendations/personalized",
     similar: (productId: string) => `/ai/recommendations/similar/${productId}`,
     recipes: (productId: string) => `/ai/recipes/${productId}`,
     feedback: (logId: string) => `/ai/feedback/${logId}`,

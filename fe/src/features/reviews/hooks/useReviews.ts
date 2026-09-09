@@ -3,39 +3,41 @@ import { useState } from 'react';
 import reviewService from '../services/reviewService';
 import type { ReviewFilters } from '../interface/interface';
 
-export const useReviews = (filters: ReviewFilters = {}) => {
+export const useReviews = (filters: ReviewFilters = {}, enabled = true) => {
   const [page, setPage] = useState(filters.page ?? 1);
   const [limit] = useState(filters.limit ?? 20);
 
   const query = useQuery(
     ['reviews', { ...filters, page, limit }],
     () => reviewService.getReviews({ ...filters, page, limit }),
-    { keepPreviousData: true }
+    { keepPreviousData: true, retry: false, enabled }
   );
 
   return { ...query, page, setPage, limit };
 };
 
-export const usePendingReviews = (filters: { page?: number; limit?: number } = {}) => {
+export const usePendingReviews = (filters: { page?: number; limit?: number } = {}, enabled = true) => {
   const [page, setPage] = useState(filters.page ?? 1);
+  const limit = filters.limit ?? 20;
   return {
     ...useQuery(
-      ['reviews', 'pending', page],
-      () => reviewService.getPendingReviews({ page, limit: filters.limit ?? 20 }),
-      { keepPreviousData: true }
+      ['reviews', 'pending', page, limit],
+      () => reviewService.getPendingReviews({ page, limit }),
+      { keepPreviousData: true, retry: false, enabled }
     ),
     page,
     setPage,
   };
 };
 
-export const useReportedReviews = (filters: { page?: number; limit?: number } = {}) => {
+export const useReportedReviews = (filters: { page?: number; limit?: number } = {}, enabled = true) => {
   const [page, setPage] = useState(filters.page ?? 1);
+  const limit = filters.limit ?? 20;
   return {
     ...useQuery(
-      ['reviews', 'reported', page],
-      () => reviewService.getReportedReviews({ page, limit: filters.limit ?? 20 }),
-      { keepPreviousData: true }
+      ['reviews', 'reported', page, limit],
+      () => reviewService.getReportedReviews({ page, limit }),
+      { keepPreviousData: true, retry: false, enabled }
     ),
     page,
     setPage,
@@ -60,7 +62,7 @@ export const useRejectReview = () => {
 export const useRespondToReview = () => {
   const qc = useQueryClient();
   return useMutation(
-    ({ id, comment }: { id: string; comment: string }) => reviewService.respondToReview(id, comment),
+    ({ id, comment, approve }: { id: string; comment: string; approve?: boolean }) => reviewService.respondToReview(id, comment, approve),
     { onSuccess: () => qc.invalidateQueries(['reviews']) }
   );
 };

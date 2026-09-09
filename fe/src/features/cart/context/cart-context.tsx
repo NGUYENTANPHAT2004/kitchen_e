@@ -1,178 +1,175 @@
-import React, { useReducer, useEffect, useRef } from 'react';
-import { cartService } from '../service/cart-service';
-import { CartContext } from './cart-context-value';
-import type { CartItem } from './cart-context-value';
-import { loadCartFromStorage } from './cart-storage';
+import { useCallback, useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
+import { useAuth } from "../../auth/hooks/auth-hook";
+import { cartService } from "../service/cart-service";
+import { CartContext } from "./cart-context-value";
+import type { CartItem } from "./cart-context-value";
+import { loadCartFromStorage } from "./cart-storage";
 
-interface CartState {
-  items: CartItem[];
-}
+const STORAGE_KEY = "kitchen_cart";
 
-type CartAction =
-  | { type: 'SET_ITEMS'; payload: CartItem[] }
-  | { type: 'ADD_ITEM'; payload: Omit<CartItem, 'quantity'> & { quantity?: number } }
-  | { type: 'REMOVE_ITEM'; payload: string }
-  | { type: 'UPDATE_QUANTITY'; payload: { id: string; quantity: number } }
-  | { type: 'CLEAR_CART' };
+export const CartProvider = ({ children }: { children: React.ReactNode }) => {
+  const { state: auth } = useAuth();
+  const userId = auth.isAuthenticated ? auth.user?._id : undefined;
+  const [items, setItems] = useState<CartItem[]>(
+    () => loadCartFromStorage().items
+  );
+  const [pending, setPending] = useState(0);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const previousUser = useRef<string | null | undefined>(null);
+  const epoch = useRef(0);
+  const currentItems = useRef(items);
+  currentItems.current = items;
 
-const CART_STORAGE_KEY = 'kitchen_cart';
+  const enqueue = useCallback(
+    (operation: () => Promise<CartItem[]>, success?: string) => {
+      const version = epoch.current;
+      setPending((count) => count + 1);
+      queue.current = queue.current
+        .then(async () => {
+          if (version !== epoch.current) return;
+          try {
+            const result = await operation();
+            if (version !== epoch.current) return;
+            currentItems.current = result;
+            setItems(result);
+            setSyncError(null);
+            if (success) toast.success(success);
+          } catch {
+            if (version !== epoch.current) return;
+            setSyncError("Không thể đồng bộ giỏ hàng. Vui lòng thử lại.");
+            toast.error("Không thể cập nhật giỏ hàng.");
+          }
+        })
+        .finally(() => setPending((count) => Math.max(0, count - 1)));
+      return queue.current;
+    },
+    []
+  );
 
-function cartReducer(state: CartState, action: CartAction): CartState {
-  switch (action.type) {
-    case 'SET_ITEMS':
-      return { items: action.payload };
-    case 'ADD_ITEM': {
-      const existing = state.items.find((item) => item.id === action.payload.id);
-      if (existing) {
-        return {
-          items: state.items.map((item) =>
-            item.id === action.payload.id
-              ? { ...item, quantity: item.quantity + (action.payload.quantity ?? 1) }
-              : item
+  useEffect(() => {
+    if (auth.loading || previousUser.current === userId) return;
+    previousUser.current = userId;
+    epoch.current += 1;
+    setSyncError(null);
+    if (!userId) {
+      setItems(loadCartFromStorage().items);
+      return;
+    }
+    const guest = loadCartFromStorage().items;
+    setItems([]);
+    void enqueue(async () => {
+      const result = guest.length
+        ? await cartService.mergeCart(guest)
+        : await cartService.getCart();
+      localStorage.removeItem(STORAGE_KEY);
+      return result;
+    });
+  }, [auth.loading, userId, enqueue]);
+
+  const updateGuest = (update: (previous: CartItem[]) => CartItem[]) => {
+    const next = update(currentItems.current);
+    currentItems.current = next;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ items: next }));
+    } catch {
+      /* Cart remains usable without storage. */
+    }
+    setItems(next);
+  };
+
+  const refreshCart = useCallback(async () => {
+    await queue.current;
+    if (userId) await enqueue(cartService.getCart);
+  }, [enqueue, userId]);
+
+  const addItem = (
+    item: Omit<CartItem, "quantity"> & { quantity?: number }
+  ) => {
+    const quantity = Math.max(1, Math.min(999, Math.floor(item.quantity || 1)));
+    if (userId) {
+      void enqueue(
+        () =>
+          cartService.addToCart(
+            item.productId,
+            item.variantId,
+            quantity,
+            item.customizations
           ),
-        };
-      }
-      return {
-        items: [...state.items, { ...action.payload, quantity: action.payload.quantity ?? 1 }],
-      };
+        "Đã thêm vào giỏ hàng"
+      );
+      return;
     }
-    case 'REMOVE_ITEM':
-      return { items: state.items.filter((item) => item.id !== action.payload) };
-    case 'UPDATE_QUANTITY': {
-      if (action.payload.quantity <= 0) {
-        return { items: state.items.filter((item) => item.id !== action.payload.id) };
-      }
-      return {
-        items: state.items.map((item) =>
-          item.id === action.payload.id ? { ...item, quantity: action.payload.quantity } : item
-        ),
-      };
-    }
-    case 'CLEAR_CART':
-      return { items: [] };
-    default:
-      return state;
-  }
-}
-
-function isLoggedIn(): boolean {
-  const token = localStorage.getItem('token');
-  return !!token && token !== 'undefined' && token !== 'null';
-}
-
-export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(cartReducer, { items: [] }, loadCartFromStorage);
-  const pendingOps = useRef<Promise<void>>(Promise.resolve());
-
-  // On mount: if logged in, sync cart from server (merge guest cart if any)
-  useEffect(() => {
-    if (!isLoggedIn()) return;
-
-    const localItems = state.items;
-    pendingOps.current = pendingOps.current.then(async () => {
-      try {
-        let items: CartItem[];
-        if (localItems.length > 0) {
-          items = await cartService.mergeCart(localItems);
-          localStorage.removeItem(CART_STORAGE_KEY);
-        } else {
-          items = await cartService.getCart();
-        }
-        dispatch({ type: 'SET_ITEMS', payload: items });
-      } catch {
-        // network failure — keep local cart
-      }
+    updateGuest((previous) => {
+      const existing = previous.find((entry) => entry.id === item.id);
+      return existing
+        ? previous.map((entry) =>
+            entry.id === item.id
+              ? { ...entry, quantity: Math.min(999, entry.quantity + quantity) }
+              : entry
+          )
+        : [...previous, { ...item, quantity }];
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Persist to localStorage for guest users
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ items: state.items }));
-    }
-  }, [state.items]);
-
-  const addItem = (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => {
-    dispatch({ type: 'ADD_ITEM', payload: item });
-
-    if (!isLoggedIn()) return;
-
-    pendingOps.current = pendingOps.current.then(async () => {
-      try {
-        const items = await cartService.addToCart(
-          item.productId,
-          item.variantId,
-          item.quantity ?? 1,
-          item.customizations
-        );
-        dispatch({ type: 'SET_ITEMS', payload: items });
-      } catch {
-        // optimistic update already applied
-      }
-    });
+    toast.success("Đã thêm vào giỏ hàng");
   };
 
   const removeItem = (id: string) => {
-    const target = state.items.find((i) => i.id === id);
-    dispatch({ type: 'REMOVE_ITEM', payload: id });
-
-    if (!isLoggedIn() || !target?.cartItemId) return;
-
-    pendingOps.current = pendingOps.current.then(async () => {
-      try {
-        const items = await cartService.removeCartItem(target.cartItemId!);
-        dispatch({ type: 'SET_ITEMS', payload: items });
-      } catch {
-        // optimistic remove already applied
-      }
+    if (!userId) {
+      updateGuest((previous) => previous.filter((item) => item.id !== id));
+      return;
+    }
+    void enqueue(async () => {
+      const target = currentItems.current.find((item) => item.id === id);
+      return target?.cartItemId
+        ? cartService.removeCartItem(target.cartItemId)
+        : cartService.getCart();
     });
   };
 
   const updateQuantity = (id: string, quantity: number) => {
-    const target = state.items.find((i) => i.id === id);
-
+    if (!Number.isInteger(quantity) || quantity > 999) return;
     if (quantity <= 0) {
       removeItem(id);
       return;
     }
-
-    dispatch({ type: 'UPDATE_QUANTITY', payload: { id, quantity } });
-
-    if (!isLoggedIn() || !target?.cartItemId) return;
-
-    pendingOps.current = pendingOps.current.then(async () => {
-      try {
-        const items = await cartService.updateCartItem(target.cartItemId!, quantity);
-        dispatch({ type: 'SET_ITEMS', payload: items });
-      } catch {
-        // optimistic update already applied
-      }
+    if (!userId) {
+      updateGuest((previous) =>
+        previous.map((item) => (item.id === id ? { ...item, quantity } : item))
+      );
+      return;
+    }
+    void enqueue(async () => {
+      const target = currentItems.current.find((item) => item.id === id);
+      return target?.cartItemId
+        ? cartService.updateCartItem(target.cartItemId, quantity)
+        : cartService.getCart();
     });
   };
 
   const clearCart = () => {
-    dispatch({ type: 'CLEAR_CART' });
-
-    if (!isLoggedIn()) return;
-
-    pendingOps.current = pendingOps.current.then(async () => {
-      try {
-        await cartService.clearCart();
-      } catch {
-        // fire and forget
-      }
+    if (!userId) {
+      updateGuest(() => []);
+      return;
+    }
+    void enqueue(async () => {
+      await cartService.clearCart();
+      return [];
     });
   };
-
-  const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = state.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   return (
     <CartContext.Provider
       value={{
-        items: state.items,
-        totalItems,
-        subtotal,
+        items,
+        isSyncing: pending > 0 || auth.loading,
+        syncError,
+        refreshCart,
+        totalItems: items.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal: items.reduce(
+          (sum, item) => sum + item.price * item.quantity,
+          0
+        ),
         addItem,
         removeItem,
         updateQuantity,

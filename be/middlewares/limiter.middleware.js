@@ -1,5 +1,5 @@
 // middlewares/limiter.middleware.js
-const rateLimit = require('express-rate-limit');
+const rateLimit = require("express-rate-limit");
 let RedisStore;
 let Redis;
 let redisClient;
@@ -7,17 +7,14 @@ let redisClient;
 if (process.env.REDIS_URL) {
   try {
     // Dùng ioredis
-    Redis = require('ioredis');
+    Redis = require("ioredis");
     redisClient = new Redis(process.env.REDIS_URL);
-    // Thử import cho version 3.x (function export)
-    try {
-      RedisStore = require('rate-limit-redis');
-    } catch (e) {
-      // Nếu không được, thử import kiểu named export (v2.x)
-      RedisStore = require('rate-limit-redis').RateLimitRedisStore;
-    }
+    RedisStore = require("rate-limit-redis").RedisStore;
+    redisClient.on("error", (error) =>
+      console.error("Rate limiter Redis error:", error.message)
+    );
   } catch (err) {
-    console.error('Không thể khởi tạo Redis:', err);
+    console.error("Không thể khởi tạo Redis:", err);
   }
 }
 
@@ -32,15 +29,16 @@ if (process.env.REDIS_URL) {
 const createLimiter = ({
   windowMs = 15 * 60 * 1000, // 15 phút
   max = 100, // 100 requests mỗi IP
-  message = 'Quá nhiều yêu cầu, vui lòng thử lại sau.',
-  skipSuccessfulRequests = false
+  message = "Quá nhiều yêu cầu, vui lòng thử lại sau.",
+  skipSuccessfulRequests = false,
+  prefix = "kitchen:limit:default:",
 } = {}) => {
   const config = {
     windowMs,
     max,
     message: {
       success: false,
-      error: message
+      error: message,
     },
     skipSuccessfulRequests,
     standardHeaders: true, // Trả về rate limit info trong headers
@@ -49,19 +47,10 @@ const createLimiter = ({
 
   // Sử dụng Redis store nếu đã cấu hình
   if (redisClient && RedisStore) {
-    // Tùy phiên bản, RedisStore có thể là function hoặc class
-    try {
-      config.store = typeof RedisStore === 'function'
-        ? RedisStore({ sendCommand: (...args) => redisClient.call(...args) })
-        : new RedisStore({ sendCommand: (...args) => redisClient.call(...args) });
-    } catch (e) {
-      // Nếu lỗi, thử cách còn lại
-      try {
-        config.store = new RedisStore({ sendCommand: (...args) => redisClient.call(...args) });
-      } catch (e2) {
-        config.store = RedisStore({ sendCommand: (...args) => redisClient.call(...args) });
-      }
-    }
+    config.store = new RedisStore({
+      prefix,
+      sendCommand: (...args) => redisClient.call(...args),
+    });
   }
 
   return rateLimit(config);
@@ -70,26 +59,28 @@ const createLimiter = ({
 // Limiter mặc định cho toàn bộ API
 const defaultLimiter = createLimiter({
   max: Number(process.env.API_RATE_LIMIT_MAX) || 1000,
-  skipSuccessfulRequests: true
+  skipSuccessfulRequests: true,
 });
 
 // Limiter nghiêm ngặt hơn cho các route xác thực
 const authLimiter = createLimiter({
+  prefix: "kitchen:limit:auth:",
   windowMs: 60 * 60 * 1000, // 1 giờ
   max: 10, // 10 yêu cầu mỗi IP trong 1 giờ
-  message: 'Quá nhiều yêu cầu, vui lòng thử lại sau 1 giờ.'
+  message: "Quá nhiều yêu cầu, vui lòng thử lại sau 1 giờ.",
 });
 
 // Limiter cho các API sản phẩm
 const productsLimiter = createLimiter({
+  prefix: "kitchen:limit:products:",
   windowMs: 5 * 60 * 1000, // 5 phút
   max: 200, // 200 requests mỗi IP
-  skipSuccessfulRequests: true // Chỉ đếm các request không thành công
+  skipSuccessfulRequests: true, // Chỉ đếm các request không thành công
 });
 
 module.exports = {
   defaultLimiter,
   authLimiter,
   productsLimiter,
-  createLimiter
+  createLimiter,
 };

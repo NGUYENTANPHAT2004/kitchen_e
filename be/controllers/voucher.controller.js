@@ -12,12 +12,35 @@ const asyncHandler = require('../middlewares/async.middleware');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 
+function paginationOptions(page, limit) {
+  const currentPage = Number.parseInt(page, 10);
+  const pageSize = Number.parseInt(limit, 10);
+  return {
+    page: Number.isSafeInteger(currentPage) ? Math.max(1, currentPage) : 1,
+    limit: Number.isSafeInteger(pageSize) ? Math.min(100, Math.max(1, pageSize)) : 10
+  };
+}
+
 // @desc      Get all vouchers
 // @route     GET /api/vouchers
 // @access    Private (Admin)
 exports.getVouchers = asyncHandler(async (req, res, _next) => {
-  const { active, expired, page = 1, limit = 10 } = req.query;
+  const { active, expired, isActive, discountType, search, page = 1, limit = 10 } = req.query;
   const query = { isDeleted: false };
+
+  if (isActive === 'true' || isActive === 'false') {
+    query.isActive = isActive === 'true';
+  }
+  if (['percentage', 'fixed'].includes(discountType)) {
+    query.discountType = discountType;
+  }
+  if (typeof search === 'string' && search.trim()) {
+    const text = search.trim().slice(0, 200).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    query.$or = [
+      { code: { $regex: text, $options: 'i' } },
+      { description: { $regex: text, $options: 'i' } }
+    ];
+  }
   
   // Filter for active vouchers
   if (active === 'true') {
@@ -34,9 +57,8 @@ exports.getVouchers = asyncHandler(async (req, res, _next) => {
   }
   
   const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    sort: { endDate: 1 },
+    ...paginationOptions(page, limit),
+    sort: { endDate: 1, _id: 1 },
     populate: [
       { path: 'categoryIds', select: 'name' },
       { path: 'productIds', select: 'name' }
@@ -49,6 +71,8 @@ exports.getVouchers = asyncHandler(async (req, res, _next) => {
     vouchers: vouchers.docs,
     pagination: {
       totalDocs: vouchers.totalDocs,
+      totalItems: vouchers.totalDocs,
+      limit: vouchers.limit,
       totalPages: vouchers.totalPages,
       currentPage: vouchers.page,
       hasNextPage: vouchers.hasNextPage,
@@ -326,8 +350,7 @@ exports.getUserVouchers = asyncHandler(async (req, res, _next) => {
   }
   
   const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
+    ...paginationOptions(page, limit),
     sort: { expiresAt: 1 },
     populate: {
       path: 'voucherId',

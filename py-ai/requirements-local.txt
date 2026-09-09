@@ -1,0 +1,14 @@
+# Lightweight catalog/chat service; torch, face and speech models are optional.
+# Versions used for the Windows local startup check on 2026-09-08.
+fastapi==0.136.3
+uvicorn==0.49.0
+pydantic==2.9.2
+pydantic-settings==2.14.2
+motor==3.7.1
+python-dotenv==1.2.2
+python-multipart==0.0.32
+aiofiles==25.1.0
+aiohttp==3.14.1
+numpy==2.4.6
+pandas==3.0.4
+scikit-learn==1.9.0

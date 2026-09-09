@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "NzNkMjY0NjMtMmU4NS00OWRlLTk3OWItOTM5OTRjZjFlN2Iw")
+    AI_SERVICE_KEY: str = os.getenv("AI_SERVICE_KEY", "")
+    INTENT_MODEL_PATH: str = os.getenv("INTENT_MODEL_PATH", os.path.join(MODEL_PATH, "intents"))
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     

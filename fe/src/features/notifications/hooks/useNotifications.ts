@@ -3,14 +3,14 @@ import { useState } from 'react';
 import notificationService from '../services/notificationService';
 import type { NotificationListParams, NotificationType } from '../interface/interface';
 
-export const useNotifications = (params: { type?: NotificationType; isRead?: boolean } = {}) => {
+export const useNotifications = (params: { type?: NotificationType; isRead?: boolean; search?: string } = {}) => {
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
 
   const query = useQuery(
     ['notifications', { ...params, page, limit }],
     () => notificationService.getNotifications({ ...params, page, limit } as NotificationListParams),
-    { keepPreviousData: true }
+    { keepPreviousData: true, retry: false }
   );
 
   return { ...query, page, setPage, limit };

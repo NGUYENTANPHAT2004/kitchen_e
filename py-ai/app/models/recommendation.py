@@ -17,6 +17,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from app.config import settings
 from app.models.product_embedding import ProductEmbeddingModel
 from app.utils.db_connector import mongo_client
+from app.utils.product_image import product_image_url
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
@@ -294,7 +295,7 @@ class RecommendationEngine:
             "name": product.get("name", ""),
             "description": product.get("description", "")[:100] + "..." if len(product.get("description", "")) > 100 else product.get("description", ""),
             "price": product.get("basePrice", 0),
-            "image": product.get("images", [])[0] if product.get("images") else None,
+            "image": product_image_url(product),
             "category_id": str(product.get("categoryId")) if product.get("categoryId") else None
         }
     

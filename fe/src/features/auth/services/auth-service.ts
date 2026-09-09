@@ -1,4 +1,4 @@
-import { api } from '../../../config/api_cli.config';
+import { api } from "../../../config/api_cli.config";
 import type {
   LoginRequest,
   LoginResponse,
@@ -7,14 +7,26 @@ import type {
   UpdateUserRequest,
   UpdatePasswordRequest,
   VerificationResponse,
-} from '../interfaces/auth-interfaces';
-import type { User } from '../../../types/user';
+} from "../interfaces/auth-interfaces";
+import type { User } from "../../../types/user";
 
-const AUTH_BASE = '/auth';
+const AUTH_BASE = "/auth";
+const normalizeUser = (raw: User & { id?: string }): User => {
+  if (!raw || !(raw._id || raw.id) || !raw.email)
+    throw new Error("Invalid user response");
+  return {
+    ...raw,
+    _id: raw._id || raw.id || "",
+    name:
+      raw.name ||
+      [raw.firstName, raw.lastName].filter(Boolean).join(" ") ||
+      raw.username,
+  };
+};
 
 function parseToken(token: string): { exp: number } | null {
   try {
-    const parts = token.split('.');
+    const parts = token.split(".");
     if (parts.length !== 3) return null;
     return JSON.parse(atob(parts[1]));
   } catch {
@@ -31,8 +43,8 @@ class AuthService {
   // --- Token helpers ---
 
   getToken(): string | null {
-    const token = localStorage.getItem('token');
-    return token && token !== 'undefined' && token !== 'null' ? token : null;
+    const token = localStorage.getItem("token");
+    return token && token !== "undefined" && token !== "null" ? token : null;
   }
 
   getTokenExpirationTime(): number | null {
@@ -65,37 +77,37 @@ class AuthService {
   static setUserData(user: User): void {
     if (!user?._id || !user?.email) return;
     try {
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('lastUserFetch', Date.now().toString());
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("lastUserFetch", Date.now().toString());
     } catch {
       // ignore storage errors
     }
   }
 
   clearAuthData(): void {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('lastUserFetch');
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("lastUserFetch");
     this.userCache = null;
     this.lastFetchTime = 0;
   }
 
   getCachedUser(): User | null {
     try {
-      const raw = localStorage.getItem('user');
-      if (!raw || raw === 'undefined' || raw === 'null') {
-        localStorage.removeItem('user');
+      const raw = localStorage.getItem("user");
+      if (!raw || raw === "undefined" || raw === "null") {
+        localStorage.removeItem("user");
         return null;
       }
       const user = JSON.parse(raw) as User;
       if (!user?._id || !user?.email) {
-        localStorage.removeItem('user');
+        localStorage.removeItem("user");
         return null;
       }
       this.userCache = user;
       return user;
     } catch {
-      localStorage.removeItem('user');
+      localStorage.removeItem("user");
       return null;
     }
   }
@@ -104,7 +116,7 @@ class AuthService {
 
   async getCurrentUser(): Promise<{ user: User }> {
     const now = Date.now();
-    const lastFetch = localStorage.getItem('lastUserFetch');
+    const lastFetch = localStorage.getItem("lastUserFetch");
     const cacheAge = lastFetch ? now - parseInt(lastFetch) : Infinity;
     const isCacheFresh =
       this.userCache &&
@@ -118,13 +130,16 @@ class AuthService {
       if (cached) return { user: cached };
     }
 
-    if (!this.getToken()) throw new Error('No authentication token');
+    if (!this.getToken()) throw new Error("No authentication token");
 
     this.lastFetchTime = now;
     try {
-      const response = await api.get<{ data: { user: User } }>(`${AUTH_BASE}/me`);
-      const user = response.data.data?.user;
-      if (!user?._id || !user?.email) throw new Error('Invalid user data from API');
+      const response = await api.get<{ data: { user: User } }>(
+        `${AUTH_BASE}/me`
+      );
+      const user = normalizeUser(response.data.data?.user);
+      if (!user?._id || !user?.email)
+        throw new Error("Invalid user data from API");
       this.userCache = user;
       AuthService.setUserData(user);
       return { user };
@@ -142,42 +157,48 @@ class AuthService {
   async refreshUser(): Promise<{ user: User }> {
     this.userCache = null;
     this.lastFetchTime = 0;
-    localStorage.removeItem('lastUserFetch');
+    localStorage.removeItem("lastUserFetch");
     return this.getCurrentUser();
   }
 
   async login(data: LoginRequest): Promise<LoginResponse> {
     const response = await api.post<LoginResponse>(`${AUTH_BASE}/login`, data);
-    const { token, user } = response.data;
+    const { token } = response.data;
+    const user = normalizeUser(response.data.user);
 
-    if (!token) throw new Error('No token received from server');
+    if (!token) throw new Error("No token received from server");
 
     const payload = parseToken(token);
     if (!payload || payload.exp < Date.now() / 1000) {
-      throw new Error('Received invalid or expired token');
+      throw new Error("Received invalid or expired token");
     }
 
-    localStorage.setItem('token', token);
+    localStorage.setItem("token", token);
     AuthService.setUserData(user);
     this.userCache = user;
 
-    return response.data;
+    return { ...response.data, user };
   }
 
   async register(data: RegisterRequest): Promise<RegisterResponse> {
-    const response = await api.post<RegisterResponse>(`${AUTH_BASE}/register`, data);
+    const response = await api.post<RegisterResponse>(
+      `${AUTH_BASE}/register`,
+      data
+    );
     const token = response.data.token;
-    const user = response.data.user ?? (response.data as any).data?.user;
+    const user = normalizeUser(
+      response.data.user ?? (response.data as any).data?.user
+    );
 
     if (token) {
-      localStorage.setItem('token', token);
+      localStorage.setItem("token", token);
       if (user) {
         AuthService.setUserData(user);
         this.userCache = user;
       }
     }
 
-    return response.data;
+    return { ...response.data, user };
   }
 
   async logout(): Promise<void> {
@@ -191,18 +212,25 @@ class AuthService {
   }
 
   async updateUserProfile(data: UpdateUserRequest): Promise<{ user: User }> {
-    const response = await api.put<{ data: { user: User } }>(`${AUTH_BASE}/me`, data);
-    const user = response.data.data?.user;
-    if (!user) throw new Error('Invalid response from server');
+    const response = await api.put<{ data: { user: User } }>(
+      `${AUTH_BASE}/me`,
+      data
+    );
+    const user = normalizeUser(response.data.data?.user);
+    if (!user) throw new Error("Invalid response from server");
     this.userCache = user;
     AuthService.setUserData(user);
     return { user };
   }
 
   async updatePassword(data: UpdatePasswordRequest): Promise<LoginResponse> {
-    const response = await api.put<LoginResponse>(`${AUTH_BASE}/password`, data);
+    const response = await api.put<LoginResponse>(
+      `${AUTH_BASE}/password`,
+      data
+    );
+    response.data.user = normalizeUser(response.data.user);
     if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
+      localStorage.setItem("token", response.data.token);
       AuthService.setUserData(response.data.user);
       this.userCache = response.data.user;
     }
@@ -210,22 +238,35 @@ class AuthService {
   }
 
   async forgotPassword(email: string): Promise<VerificationResponse> {
-    const response = await api.post<VerificationResponse>(`${AUTH_BASE}/forgot-password`, { email });
+    const response = await api.post<VerificationResponse>(
+      `${AUTH_BASE}/forgot-password`,
+      { email }
+    );
     return response.data;
   }
 
-  async resetPassword(token: string, password: string): Promise<VerificationResponse> {
-    const response = await api.post<VerificationResponse>(`${AUTH_BASE}/reset-password/${token}`, { password });
+  async resetPassword(
+    token: string,
+    password: string
+  ): Promise<VerificationResponse> {
+    const response = await api.post<VerificationResponse>(
+      `${AUTH_BASE}/reset-password/${token}`,
+      { password }
+    );
     return response.data;
   }
 
   async verifyEmail(token: string): Promise<VerificationResponse> {
-    const response = await api.get<VerificationResponse>(`${AUTH_BASE}/verify-email/${token}`);
+    const response = await api.get<VerificationResponse>(
+      `${AUTH_BASE}/verify-email/${token}`
+    );
     return response.data;
   }
 
   async resendVerificationEmail(): Promise<VerificationResponse> {
-    const response = await api.post<VerificationResponse>(`${AUTH_BASE}/resend-verification`);
+    const response = await api.post<VerificationResponse>(
+      `${AUTH_BASE}/resend-verification`
+    );
     return response.data;
   }
 }

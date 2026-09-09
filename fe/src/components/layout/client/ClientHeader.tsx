@@ -1,222 +1,341 @@
-import React, { useState } from 'react';
-import { ShoppingCart, Search, User, Menu, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { useCart } from '../../../features/cart/context/cart-hook';
-import { urlUtils } from '../../../config/api_cli.config';
+import { useEffect, useRef, useState } from "react";
+import {
+  ShoppingBag,
+  Search,
+  UserRound,
+  Menu,
+  X,
+  Heart,
+  Plus,
+  Minus,
+  Trash2,
+  ArrowRight,
+  ChefHat,
+} from "lucide-react";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useCart } from "../../../features/cart/context/cart-hook";
+import { useAuth } from "../../../features/auth/hooks/auth-hook";
+import {
+  defaultSettings,
+  useStoreSettings,
+} from "../../../features/store/useStoreSettings";
+import { urlUtils } from "../../../config/api_cli.config";
 
-interface CategoryType {
-  _id: string;
-  name: string;
-  slug: string;
-}
-
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  image?: string;
-  variant?: string;
-  quantity: number;
-}
-
-interface ClientHeaderProps {
-  categories: CategoryType[];
-}
-
-const ClientHeader: React.FC<ClientHeaderProps> = ({ categories }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [showCart, setShowCart] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+export default function ClientHeader({
+  categories,
+}: {
+  categories: { _id: string; name: string }[];
+}) {
+  const [menu, setMenu] = useState(false);
+  const [cart, setCart] = useState(false);
+  const [search, setSearch] = useState("");
+  const dialog = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
-  const { items, totalItems, subtotal, removeItem, updateQuantity } = useCart();
-
-  const topCategories = categories.slice(0, 4);
-
-  const handleSearch = (e: React.FormEvent) => {
+  const { state } = useAuth();
+  const { data: settings = defaultSettings } = useStoreSettings();
+  const {
+    items,
+    totalItems,
+    subtotal,
+    removeItem,
+    updateQuantity,
+    isSyncing,
+    syncError,
+    refreshCart,
+  } = useCart();
+  useEffect(() => {
+    if (cart) dialog.current?.showModal();
+    else dialog.current?.close();
+    document.body.style.overflow = cart || menu ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [cart, menu]);
+  const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/shop/category/all?search=${encodeURIComponent(searchQuery.trim())}`);
-    }
+    navigate(
+      `/shop/category/all${
+        search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ""
+      }`
+    );
+    setMenu(false);
   };
-
+  const searchForm = (
+    <form className="store-search" onSubmit={submitSearch}>
+      <Search size={18} />
+      <input
+        aria-label="Tìm sản phẩm"
+        placeholder="Bạn đang tìm gì cho căn bếp?"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <button
+        type="submit"
+        className="icon-button"
+        title="Tìm kiếm"
+        aria-label="Tìm kiếm"
+      >
+        <ArrowRight size={17} />
+      </button>
+    </form>
+  );
   return (
     <>
-      {/* Promo bar */}
-      <div className="bg-gray-800 text-white text-center text-sm py-2 px-4 flex justify-between">
-        <div>Nhận 460K · Ưu đãi</div>
-        <div className="hidden md:flex items-center space-x-6">
-          <span>Tiết kiệm 3.4 triệu cho Bộ Nồi Chảo. <span className="underline font-medium cursor-pointer">Mua Ngay</span></span>
-        </div>
-        <div className="flex items-center space-x-4">
-          <span className="cursor-pointer">Cửa hàng</span>
-          <span className="cursor-pointer">Hỗ trợ</span>
-        </div>
+      <div className="announcement">
+        <span>Gọn gian bếp. Trọn niềm vui.</span>
+        <span>
+          Miễn phí vận chuyển từ{" "}
+          {settings.freeShippingThreshold.toLocaleString("vi-VN")} ₫
+        </span>
+        <Link to="/shop/support">
+          Hỗ trợ khách hàng <ArrowRight size={12} />
+        </Link>
       </div>
-
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <button className="md:hidden" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-              {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+      <header className="store-header">
+        <div className="store-container header-main">
+          <button
+            className="icon-button mobile-menu-toggle"
+            aria-label="Mở danh mục"
+            title="Danh mục"
+            onClick={() => setMenu(true)}
+          >
+            <Menu size={23} />
+          </button>
+          <Link className="brand" to="/shop/home">
+            <ChefHat size={30} strokeWidth={1.4} />
+            <span>
+              kitchen<span className="brand-dot">e.</span>
+            </span>
+          </Link>
+          <div className="desktop-search">{searchForm}</div>
+          <div className="header-actions">
+            <Link
+              className="icon-button desktop-wish"
+              to="/shop/account/wishlist"
+              title="Yêu thích"
+              aria-label="Yêu thích"
+            >
+              <Heart size={21} />
+            </Link>
+            <Link
+              className="icon-button"
+              to="/shop/account"
+              title="Tài khoản"
+              aria-label="Tài khoản"
+            >
+              <UserRound size={21} />
+            </Link>
+            <button
+              className="icon-button cart-toggle"
+              onClick={() => setCart(true)}
+              title="Giỏ hàng"
+              aria-label={`Giỏ hàng (${totalItems})`}
+            >
+              <ShoppingBag size={22} />
+              <span className="cart-count">{totalItems}</span>
             </button>
-
-            <div className="text-2xl font-serif cursor-pointer" onClick={() => navigate('/shop/home')}>
-              <h1 className="font-bold">Kitchen E</h1>
-            </div>
-
-            <nav className="hidden md:flex items-center space-x-8">
-              {topCategories.map(cat => (
-                <button
-                  key={cat._id}
-                  className="hover:underline uppercase text-sm font-medium"
-                  onClick={() => navigate(`/shop/category/${cat._id}`)}
-                >
-                  {cat.name}
-                </button>
-              ))}
-              {topCategories.length === 0 && (
-                <>
-                  <button className="hover:underline">NỒI CHẢO</button>
-                  <button className="hover:underline">DỤNG CỤ NƯỚNG</button>
-                  <button className="hover:underline">THIẾT BỊ</button>
-                  <button className="hover:underline">BÀN ĂN</button>
-                </>
-              )}
-            </nav>
-
-            <div className="flex items-center space-x-4">
-              <form onSubmit={handleSearch} className="hidden md:flex items-center border rounded-full px-3 py-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Tìm kiếm..."
-                  className="outline-none text-sm w-32"
-                />
-                <button type="submit"><Search size={16} /></button>
-              </form>
-              <button onClick={() => navigate('/shop/account')}>
-                <User size={20} />
-              </button>
-              <button onClick={() => setShowCart(!showCart)} className="relative">
-                <ShoppingCart size={20} />
-                {totalItems > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {totalItems}
-                  </span>
-                )}
-              </button>
-            </div>
           </div>
         </div>
+        <nav
+          className="store-container header-nav"
+          aria-label="Điều hướng cửa hàng"
+        >
+          <NavLink to="/shop/category/all">Tất cả sản phẩm</NavLink>
+          {categories.slice(0, 4).map((c) => (
+            <NavLink key={c._id} to={`/shop/category/${c._id}`}>
+              {c.name}
+            </NavLink>
+          ))}
+          <NavLink to="/shop/recipes">Góc vào bếp</NavLink>
+          <NavLink to="/shop/assistant">Trợ lý AI</NavLink>
+          <NavLink to="/shop/account/vouchers">Ưu đãi</NavLink>
+          <span className="nav-spacer" />
+          {["admin", "staff"].includes(state.user?.role || "") && (
+            <Link to="/dashboard">
+              Quản trị <ArrowRight size={14} />
+            </Link>
+          )}
+        </nav>
       </header>
-
-      {/* Mobile menu */}
-      {isMenuOpen && (
-        <div className="fixed inset-0 bg-white z-50 p-4 overflow-y-auto">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold">Menu</h2>
-            <button onClick={() => setIsMenuOpen(false)}><X size={24} /></button>
-          </div>
-          <nav className="space-y-4">
-            {categories.map(cat => (
-              <button
-                key={cat._id}
-                className="block w-full text-left py-2 border-b uppercase"
-                onClick={() => { navigate(`/shop/category/${cat._id}`); setIsMenuOpen(false); }}
-              >
-                {cat.name}
-              </button>
-            ))}
+      {menu && (
+        <div className="mobile-menu">
+          <div className="section-heading">
+            <span className="brand">kitchene.</span>
             <button
-              className="block w-full text-left py-2 border-b"
-              onClick={() => { navigate('/shop/account'); setIsMenuOpen(false); }}
+              className="icon-button"
+              onClick={() => setMenu(false)}
+              title="Đóng"
+              aria-label="Đóng danh mục"
             >
-              Tài khoản
+              <X />
             </button>
+          </div>
+          {searchForm}
+          <nav>
+            <Link onClick={() => setMenu(false)} to="/shop/category/all">
+              Tất cả sản phẩm
+            </Link>
+            {categories.map((c) => (
+              <Link
+                key={c._id}
+                onClick={() => setMenu(false)}
+                to={`/shop/category/${c._id}`}
+              >
+                {c.name}
+              </Link>
+            ))}
+            <Link to="/shop/recipes" onClick={() => setMenu(false)}>
+              Góc vào bếp
+            </Link>
+            <Link to="/shop/assistant" onClick={() => setMenu(false)}>Trợ lý AI</Link>
+            <Link to="/shop/account/orders" onClick={() => setMenu(false)}>
+              Đơn hàng của tôi
+            </Link>
+            <Link to="/shop/account/wishlist" onClick={() => setMenu(false)}>
+              Yêu thích
+            </Link>
           </nav>
         </div>
       )}
-
-      {/* Cart sidebar */}
-      {showCart && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
-          <div className="bg-white w-full max-w-md p-6 overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Giỏ hàng {totalItems > 0 ? `(${totalItems})` : ''}</h2>
-              <button onClick={() => setShowCart(false)}><X size={24} /></button>
+      <dialog
+        ref={dialog}
+        className="cart-dialog"
+        onCancel={() => setCart(false)}
+        onClick={(e) => {
+          if (e.target === dialog.current) setCart(false);
+        }}
+      >
+        <div className="cart-panel">
+          <div className="section-heading">
+            <h2>
+              Giỏ hàng <span className="muted">({totalItems})</span>
+            </h2>
+            <button
+              className="icon-button"
+              onClick={() => setCart(false)}
+              aria-label="Đóng giỏ hàng"
+              title="Đóng"
+            >
+              <X />
+            </button>
+          </div>
+          {syncError && (
+            <div className="error-banner">
+              {syncError}
+              <button onClick={() => refreshCart()}>Thử lại</button>
             </div>
-
-            {items.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="mb-4">Giỏ hàng của bạn đang trống</p>
-                <button
-                  className="bg-[#b75e41] text-white px-6 py-3 rounded-md"
-                  onClick={() => setShowCart(false)}
-                >
-                  Tiếp tục mua sắm
-                </button>
+          )}
+          {!items.length ? (
+            <div className="request-state">
+              <ShoppingBag size={44} strokeWidth={1} />
+              <h3>
+                {isSyncing ? "Đang tải giỏ hàng..." : "Giỏ hàng đang trống"}
+              </h3>
+              <button
+                className="button"
+                onClick={() => {
+                  setCart(false);
+                  navigate("/shop/category/all");
+                }}
+              >
+                Khám phá sản phẩm <ArrowRight size={16} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="shipping-progress">
+                <p>
+                  {subtotal >= settings.freeShippingThreshold
+                    ? "Đơn hàng được miễn phí vận chuyển"
+                    : `Thêm ${(
+                        settings.freeShippingThreshold - subtotal
+                      ).toLocaleString("vi-VN")} ₫ để miễn phí vận chuyển`}
+                </p>
+                <progress
+                  max={Math.max(1, settings.freeShippingThreshold)}
+                  value={subtotal}
+                />
               </div>
-            ) : (
-              <>
-                <div className="border-t border-b py-2 mb-4">
-                  <p className="text-green-600 text-sm">Chúc mừng! Bạn được miễn phí vận chuyển tiêu chuẩn</p>
-                </div>
-                {items.map((item: CartItem) => (
-                  <div key={item.id} className="flex border-b py-4">
+              <div className="cart-lines">
+                {items.map((item) => (
+                  <div className="cart-line" key={item.id}>
                     <img
                       src={item.image || urlUtils.getFallbackImageUrl()}
                       alt={item.name}
-                      className="w-20 h-20 object-cover mr-4 rounded"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = urlUtils.getFallbackImageUrl();
+                      }}
                     />
-                    <div className="flex-1">
-                      <h3 className="font-medium">{item.name}</h3>
-                      {item.variant && <p className="text-gray-500 text-sm">{item.variant}</p>}
-                      <div className="flex items-center mt-2">
+                    <div className="cart-line-main">
+                      <Link
+                        to={`/shop/product/${item.productId}`}
+                        onClick={() => setCart(false)}
+                      >
+                        {item.name}
+                      </Link>
+                      {item.variant && <small>{item.variant}</small>}
+                      <strong>
+                        {(item.price * item.quantity).toLocaleString("vi-VN")} ₫
+                      </strong>
+                      <div className="quantity-stepper">
                         <button
-                          className="border rounded-md px-2"
-                          onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                        >-</button>
-                        <span className="mx-2">{item.quantity}</span>
+                          disabled={isSyncing}
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity - 1)
+                          }
+                          aria-label={`Giảm ${item.name}`}
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <span>{item.quantity}</span>
                         <button
-                          className="border rounded-md px-2"
-                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                        >+</button>
+                          disabled={isSyncing}
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity + 1)
+                          }
+                          aria-label={`Tăng ${item.name}`}
+                        >
+                          <Plus size={14} />
+                        </button>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-medium">{item.price.toLocaleString()}₫</p>
-                      <button
-                        className="text-gray-500 text-sm underline mt-2"
-                        onClick={() => removeItem(item.id)}
-                      >Xóa</button>
-                    </div>
+                    <button
+                      disabled={isSyncing}
+                      className="icon-button"
+                      onClick={() => removeItem(item.id)}
+                      title="Xóa"
+                      aria-label={`Xóa ${item.name}`}
+                    >
+                      <Trash2 size={17} />
+                    </button>
                   </div>
                 ))}
-                <div className="mt-6 space-y-4">
-                  <div className="flex justify-between">
-                    <span>Tổng phụ</span>
-                    <span className="font-medium">{subtotal.toLocaleString()}₫</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Phí vận chuyển</span>
-                    <span>Được tính khi thanh toán</span>
-                  </div>
-                  <button
-                    className="w-full bg-[#b75e41] text-white py-3 rounded-md font-medium"
-                    onClick={() => { setShowCart(false); navigate('/shop/checkout'); }}
-                  >
-                    Thanh toán
-                  </button>
+              </div>
+              <div className="cart-summary">
+                <div>
+                  <span>Tạm tính</span>
+                  <strong>{subtotal.toLocaleString("vi-VN")} ₫</strong>
                 </div>
-              </>
-            )}
-          </div>
+                <button
+                  className="button full"
+                  disabled={isSyncing || !!syncError}
+                  onClick={() => {
+                    setCart(false);
+                    navigate("/shop/checkout");
+                  }}
+                >
+                  {isSyncing ? "Đang cập nhật..." : "Tiến hành thanh toán"}
+                  <ArrowRight size={17} />
+                </button>
+                <Link to="/shop/category/all" onClick={() => setCart(false)}>
+                  Tiếp tục mua sắm
+                </Link>
+              </div>
+            </>
+          )}
         </div>
-      )}
+      </dialog>
     </>
   );
-};
-
-export default ClientHeader;
+}

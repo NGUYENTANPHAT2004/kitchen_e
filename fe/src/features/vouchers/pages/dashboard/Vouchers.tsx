@@ -11,6 +11,7 @@ import {
   useDeleteVoucher,
 } from '../../hooks/useVouchers';
 import type { Voucher, VoucherFormData } from '../../interface/interface';
+import RequestState from '../../../../components/shared/RequestState';
 
 const formatDate = (d: string) =>
   new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -47,7 +48,7 @@ const VoucherManagement: React.FC = () => {
     filterStatus === 'inactive' ? false :
     undefined;
 
-  const { data, isLoading, page, setPage } = useVouchers({
+  const { data, isLoading, isError, refetch, page, setPage } = useVouchers({
     search: searchTerm || undefined,
     isActive: isActiveFilter,
     discountType: filterType || undefined,
@@ -132,7 +133,7 @@ const VoucherManagement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center">
           <Tag className="mr-2" size={24} />
           Quản lý mã giảm giá
@@ -147,12 +148,13 @@ const VoucherManagement: React.FC = () => {
 
       {/* Filters */}
       <div className="bg-white shadow-sm rounded-lg p-4 space-y-3">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="relative min-w-0 sm:col-span-2 xl:col-span-1">
             <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
             <input
               type="text"
               placeholder="Tìm kiếm theo mã, mô tả..."
+              aria-label="Tìm mã giảm giá"
               className="pl-10 w-full py-2 px-4 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               value={searchTerm}
               onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
@@ -160,7 +162,8 @@ const VoucherManagement: React.FC = () => {
           </div>
           <div className="relative">
             <select
-              className="appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[150px]"
+              aria-label="Trạng thái mã giảm giá"
+              className="w-full appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               value={filterStatus}
               onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
             >
@@ -172,7 +175,8 @@ const VoucherManagement: React.FC = () => {
           </div>
           <div className="relative">
             <select
-              className="appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[150px]"
+              aria-label="Loại mã giảm giá"
+              className="w-full appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               value={filterType}
               onChange={e => { setFilterType(e.target.value as '' | 'percentage' | 'fixed'); setPage(1); }}
             >
@@ -182,7 +186,7 @@ const VoucherManagement: React.FC = () => {
             </select>
             <Filter className="absolute right-2 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
           </div>
-          <button onClick={() => { setSearchTerm(''); setFilterStatus('all'); setFilterType(''); }} className="px-4 py-2 text-sm text-gray-600 hover:text-indigo-600">
+          <button onClick={() => { setSearchTerm(''); setFilterStatus('all'); setFilterType(''); setPage(1); }} className="px-4 py-2 text-sm text-gray-600 hover:text-indigo-600">
             Xóa bộ lọc
           </button>
         </div>
@@ -201,11 +205,13 @@ const VoucherManagement: React.FC = () => {
       {/* Table */}
       <div className="overflow-x-auto bg-white shadow-sm rounded-lg">
         {isLoading ? (
-          <div className="p-8 text-center text-gray-500">Đang tải...</div>
+          <RequestState loading />
+        ) : isError ? (
+          <RequestState error retry={() => refetch()} />
         ) : sorted.length === 0 ? (
           <div className="p-8 text-center text-gray-500">Không có mã giảm giá nào</div>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-[1100px] w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 text-left">
@@ -319,7 +325,7 @@ const VoucherManagement: React.FC = () => {
       </div>
 
       {/* Pagination */}
-      {pagination && pagination.totalPages > 1 && (
+      {!isError && pagination && pagination.totalPages > 1 && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-700">
             Trang <span className="font-medium">{page}</span> / <span className="font-medium">{pagination.totalPages}</span>

@@ -1370,3 +1370,4 @@
 {"timestamp": "2026-06-29T06:42:07.701300", "level": "ERROR", "logger": "app.api.user_behavior", "message": "Error logging user activity: 'u1' is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string"}
 {"timestamp": "2026-06-29T06:42:07.707967", "level": "INFO", "logger": "app.main", "message": "Request processed in 0.2459 seconds: POST /api/user-behavior/log-activity"}
 {"timestamp": "2026-06-29T06:47:57.704026", "level": "INFO", "logger": "app.main", "message": "Request processed in 0.0265 seconds: GET /health"}
+{"timestamp": "2026-09-08T02:31:22.520896", "level": "INFO", "logger": "kitchen_ai", "message": "Logging initialized with level INFO"}

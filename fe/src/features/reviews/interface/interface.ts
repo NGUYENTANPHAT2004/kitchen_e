@@ -1,6 +1,6 @@
 export interface Review {
   _id: string;
-  userId: { _id: string; name: string; email: string; avatar?: string };
+  userId: { _id: string; name: string; avatar?: string };
   productId: { _id: string; name: string; images?: Array<{ url: string }> };
   orderId?: string;
   title?: string;
@@ -18,6 +18,22 @@ export interface Review {
   createdAt: string;
   updatedAt: string;
 }
+
+// API relations can be unpopulated or null after a related record is removed.
+export type ReviewPayload = Omit<Review, 'userId' | 'productId' | 'images' | 'adminResponse'> & {
+  userId: {
+    _id: string;
+    name?: string;
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+    username?: string;
+    avatar?: string;
+  } | string | null;
+  productId: { _id: string; name?: string; images?: Array<{ url: string }> } | string | null;
+  images?: Array<string | { url?: string; caption?: string } | null>;
+  adminResponse?: { comment?: string; createdAt?: string; respondedAt?: string } | null;
+};
 
 export interface ReviewFilters {
   page?: number;

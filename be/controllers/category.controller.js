@@ -49,9 +49,9 @@ exports.getCategories = asyncHandler(async (req, res) => {
       page: parseInt(page, 10) || 1,
       limit: parseInt(limit, 10) || 20,
       sort: 'displayOrder name',
-      populate: {
+      populate: [{
         path: 'productsCount'
-      }
+      }]
     };
 
     // Add subcategories if not flat view

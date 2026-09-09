@@ -1,33 +1,33 @@
-jest.mock('../models/Payment', () => ({
+jest.mock("../models/Payment", () => ({
   findOne: jest.fn(),
   findById: jest.fn(),
   createPayment: jest.fn(),
-  aggregate: jest.fn()
+  aggregate: jest.fn(),
 }));
-jest.mock('../models/Order', () => ({
-  findById: jest.fn()
+jest.mock("../models/Order", () => ({
+  findById: jest.fn(),
 }));
-jest.mock('../models/PaymentWebhookEvent', () => ({
+jest.mock("../models/PaymentWebhookEvent", () => ({
   create: jest.fn(),
-  findOne: jest.fn()
+  findOne: jest.fn(),
 }));
-jest.mock('../services/idempotency.service', () => ({
+jest.mock("../services/idempotency.service", () => ({
   begin: jest.fn(),
   complete: jest.fn(),
-  abandon: jest.fn()
+  abandon: jest.fn(),
 }));
 
-const Payment = require('../models/Payment');
-const Order = require('../models/Order');
-const PaymentWebhookEvent = require('../models/PaymentWebhookEvent');
-const idempotencyService = require('../services/idempotency.service');
-const paymentGatewayService = require('../services/payment-gateway.service');
-const paymentController = require('../controllers/payment.controller');
+const Payment = require("../models/Payment");
+const Order = require("../models/Order");
+const PaymentWebhookEvent = require("../models/PaymentWebhookEvent");
+const idempotencyService = require("../services/idempotency.service");
+const paymentGatewayService = require("../services/payment-gateway.service");
+const paymentController = require("../controllers/payment.controller");
 
 const createResponse = () => ({
   status: jest.fn().mockReturnThis(),
   json: jest.fn().mockReturnThis(),
-  send: jest.fn().mockReturnThis()
+  send: jest.fn().mockReturnThis(),
 });
 
 const invoke = async (handler, req, res) => {
@@ -39,81 +39,126 @@ const invoke = async (handler, req, res) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  process.env.VNPAY_HASH_SECRET = 'test-secret';
-  process.env.FRONTEND_URL = 'http://frontend.test';
-  process.env.API_URL = 'http://api.test';
+  process.env.VNPAY_HASH_SECRET = "test-secret";
+  process.env.VNPAY_ENABLED = "true";
+  process.env.VNPAY_TMN_CODE = "LOCALTEST";
+  process.env.VNPAY_URL = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
+  process.env.FRONTEND_URL = "http://frontend.test";
+  process.env.API_URL = "http://api.test";
   idempotencyService.begin.mockResolvedValue({ replay: false, record: null });
   idempotencyService.complete.mockResolvedValue();
   idempotencyService.abandon.mockResolvedValue();
 });
 
-describe('Payment controller regressions', () => {
-  test('reuses a pending payment but still creates a gateway redirect URL', async () => {
+describe("Payment controller regressions", () => {
+  test("rejects signed callbacks with the wrong amount", async () => {
+    const query = {
+      vnp_TxnRef: "PM-1",
+      vnp_Amount: "100",
+      vnp_ResponseCode: "00",
+    };
+    query.vnp_SecureHash = paymentGatewayService.buildVnPaySignature(
+      query,
+      process.env.VNPAY_HASH_SECRET
+    );
     const payment = {
-      status: 'pending',
-      paymentMethod: 'vnpay',
-      paymentId: 'PM-123',
+      paymentMethod: "vnpay",
+      status: "pending",
       amount: 100000,
-      returnUrl: 'http://frontend.test/complete',
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn(),
+    };
+    Payment.findOne.mockResolvedValue(payment);
+    await expect(
+      invoke(paymentController.completePayment, { query }, createResponse())
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(payment.save).not.toHaveBeenCalled();
+  });
+  test("does not create payment records for unsupported providers", async () => {
+    await expect(
+      invoke(
+        paymentController.initiatePayment,
+        { body: { orderId: "order-1", paymentMethod: "momo" } },
+        createResponse()
+      )
+    ).rejects.toMatchObject({ statusCode: 503 });
+    expect(Payment.createPayment).not.toHaveBeenCalled();
+  });
+  test("does not claim refunds were processed", async () => {
+    await expect(
+      invoke(paymentController.processRefund, { body: {} }, createResponse())
+    ).rejects.toMatchObject({ statusCode: 503 });
+  });
+  test("reuses a pending payment but still creates a gateway redirect URL", async () => {
+    const payment = {
+      status: "pending",
+      paymentMethod: "vnpay",
+      paymentId: "PM-123",
+      amount: 100000,
+      returnUrl: "http://frontend.test/complete",
+      save: jest.fn().mockResolvedValue(),
     };
     Order.findById.mockResolvedValue({
-      _id: 'order-1',
-      userId: { toString: () => 'user-1' },
+      _id: "order-1",
+      userId: { toString: () => "user-1" },
       totalAmount: 100000,
-      orderNumber: 'DH-1',
-      status: 'pending',
-      isPaid: false
+      orderNumber: "DH-1",
+      status: "pending",
+      isPaid: false,
     });
     Payment.findOne.mockResolvedValue(payment);
 
     const req = {
-      body: { orderId: 'order-1', paymentMethod: 'vnpay' },
-      user: { _id: { toString: () => 'user-1' } },
-      get: jest.fn()
+      body: { orderId: "order-1", paymentMethod: "vnpay" },
+      user: { _id: { toString: () => "user-1" } },
+      get: jest.fn(),
     };
     const res = createResponse();
     await invoke(paymentController.initiatePayment, req, res);
 
     expect(Payment.createPayment).not.toHaveBeenCalled();
     expect(payment.save).toHaveBeenCalledTimes(1);
-    expect(res.json.mock.calls[0][0].data.redirectUrl).toContain('vnpayment.vn');
+    expect(res.json.mock.calls[0][0].data.redirectUrl).toContain(
+      "vnpayment.vn"
+    );
   });
 
-  test('does not trust a generic status=success return parameter', async () => {
+  test("does not trust a generic status=success return parameter", async () => {
     const payment = {
-      status: 'pending',
-      paymentMethod: 'bank_transfer',
-      orderId: 'order-1',
-      save: jest.fn()
+      status: "pending",
+      paymentMethod: "bank_transfer",
+      orderId: "order-1",
+      save: jest.fn(),
     };
     Payment.findOne.mockResolvedValue(payment);
     Order.findById.mockResolvedValue({
-      _id: 'order-1', orderNumber: 'DH-1', status: 'pending', isPaid: false
+      _id: "order-1",
+      orderNumber: "DH-1",
+      status: "pending",
+      isPaid: false,
     });
 
-    const req = { query: { orderId: 'order-1', status: 'success' } };
+    const req = { query: { orderId: "order-1", status: "success" } };
     const res = createResponse();
     await invoke(paymentController.completePayment, req, res);
 
-    expect(payment.status).toBe('pending');
+    expect(payment.status).toBe("pending");
     expect(payment.save).not.toHaveBeenCalled();
   });
 
-  test('rejects an unsigned VNPay return response', async () => {
+  test("rejects an unsigned VNPay return response", async () => {
     const payment = {
-      status: 'pending',
-      paymentMethod: 'vnpay',
-      orderId: 'order-1',
-      save: jest.fn()
+      status: "pending",
+      paymentMethod: "vnpay",
+      orderId: "order-1",
+      save: jest.fn(),
     };
     Payment.findOne.mockResolvedValue(payment);
     const req = {
       query: {
-        orderId: 'order-1',
-        vnp_ResponseCode: '00',
-        vnp_TransactionStatus: '00'
-      }
+        orderId: "order-1",
+        vnp_ResponseCode: "00",
+        vnp_TransactionStatus: "00",
+      },
     };
     const res = createResponse();
     const next = jest.fn();
@@ -124,56 +169,63 @@ describe('Payment controller regressions', () => {
     expect(payment.save).not.toHaveBeenCalled();
   });
 
-  test('finds VNPay return payment by vnp_TxnRef', async () => {
+  test("finds VNPay return payment by vnp_TxnRef", async () => {
     const query = {
-      vnp_TxnRef: 'PM-123',
-      vnp_ResponseCode: '00',
-      vnp_TransactionStatus: '00',
-      vnp_TransactionNo: 'TX-1'
+      vnp_Amount: "10000000",
+      vnp_TxnRef: "PM-123",
+      vnp_ResponseCode: "00",
+      vnp_TransactionStatus: "00",
+      vnp_TransactionNo: "TX-1",
     };
     query.vnp_SecureHash = paymentGatewayService.buildVnPaySignature(
       query,
       process.env.VNPAY_HASH_SECRET
     );
     const payment = {
-      status: 'pending',
-      paymentMethod: 'vnpay',
-      orderId: 'order-1',
-      save: jest.fn().mockResolvedValue()
+      status: "pending",
+      paymentMethod: "vnpay",
+      orderId: "order-1",
+      save: jest.fn().mockResolvedValue(),
     };
+    payment.amount = 100000;
     Payment.findOne.mockResolvedValue(payment);
     Order.findById.mockResolvedValue({
-      _id: 'order-1', orderNumber: 'DH-1', status: 'processing', isPaid: true
+      _id: "order-1",
+      orderNumber: "DH-1",
+      status: "processing",
+      isPaid: true,
     });
 
     const res = createResponse();
     await invoke(paymentController.completePayment, { query }, res);
 
-    expect(Payment.findOne).toHaveBeenCalledWith({ paymentId: 'PM-123' });
-    expect(payment.status).toBe('completed');
+    expect(Payment.findOne).toHaveBeenCalledWith({ paymentId: "PM-123" });
+    expect(payment.status).toBe("completed");
   });
-  test('synchronizes a successful webhook to the order state', async () => {
+  test("synchronizes a successful webhook to the order state", async () => {
     const payload = {
-      vnp_TxnRef: 'PM-123',
-      vnp_ResponseCode: '00',
-      vnp_TransactionStatus: '00',
-      vnp_TransactionNo: 'TX-1'
+      vnp_Amount: "10000000",
+      vnp_TxnRef: "PM-123",
+      vnp_ResponseCode: "00",
+      vnp_TransactionStatus: "00",
+      vnp_TransactionNo: "TX-1",
     };
     payload.vnp_SecureHash = paymentGatewayService.buildVnPaySignature(
       payload,
       process.env.VNPAY_HASH_SECRET
     );
-    const event = { status: 'received', save: jest.fn().mockResolvedValue() };
+    const event = { status: "received", save: jest.fn().mockResolvedValue() };
     const payment = {
-      status: 'pending',
-      paymentMethod: 'vnpay',
-      orderId: 'order-1',
-      save: jest.fn().mockResolvedValue()
+      status: "pending",
+      paymentMethod: "vnpay",
+      orderId: "order-1",
+      save: jest.fn().mockResolvedValue(),
     };
+    payment.amount = 100000;
     const order = {
-      status: 'pending',
+      status: "pending",
       isPaid: false,
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     };
     PaymentWebhookEvent.create.mockResolvedValue(event);
     Payment.findOne.mockResolvedValue(payment);
@@ -183,64 +235,68 @@ describe('Payment controller regressions', () => {
     await invoke(paymentController.paymentWebhook, { body: payload }, res);
 
     expect(order.isPaid).toBe(true);
-    expect(order.status).toBe('processing');
+    expect(order.status).toBe("processing");
     expect(order.save).toHaveBeenCalledTimes(1);
   });
 
-  test('retries an event that was recorded before processing completed', async () => {
+  test("retries an event that was recorded before processing completed", async () => {
     const payload = {
-      vnp_TxnRef: 'PM-123',
-      vnp_ResponseCode: '00',
-      vnp_TransactionStatus: '00',
-      vnp_TransactionNo: 'TX-1'
+      vnp_Amount: "10000000",
+      vnp_TxnRef: "PM-123",
+      vnp_ResponseCode: "00",
+      vnp_TransactionStatus: "00",
+      vnp_TransactionNo: "TX-1",
     };
     payload.vnp_SecureHash = paymentGatewayService.buildVnPaySignature(
       payload,
       process.env.VNPAY_HASH_SECRET
     );
     const payment = {
-      status: 'pending',
-      paymentMethod: 'vnpay',
-      orderId: 'order-1',
-      save: jest.fn().mockResolvedValue()
+      status: "pending",
+      paymentMethod: "vnpay",
+      orderId: "order-1",
+      save: jest.fn().mockResolvedValue(),
     };
+    payment.amount = 100000;
     PaymentWebhookEvent.create.mockRejectedValue({ code: 11000 });
     PaymentWebhookEvent.findOne.mockResolvedValue({
-      status: 'received',
+      status: "received",
       payloadHash: paymentGatewayService.hashPayload(payload),
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     });
     Payment.findOne.mockResolvedValue(payment);
     Order.findById.mockResolvedValue({
-      status: 'processing',
+      status: "processing",
       isPaid: true,
-      save: jest.fn().mockResolvedValue()
+      save: jest.fn().mockResolvedValue(),
     });
 
     const res = createResponse();
     await invoke(paymentController.paymentWebhook, { body: payload }, res);
 
-    expect(Payment.findOne).toHaveBeenCalledWith({ paymentId: 'PM-123' });
-    expect(payment.status).toBe('completed');
-    expect(res.send).toHaveBeenCalledWith('OK');
+    expect(Payment.findOne).toHaveBeenCalledWith({ paymentId: "PM-123" });
+    expect(payment.status).toBe("completed");
+    expect(res.send).toHaveBeenCalledWith("OK");
   });
 
-  test('does not downgrade a completed payment on a later failed webhook', async () => {
+  test("does not downgrade a completed payment on a later failed webhook", async () => {
     const payload = {
-      vnp_TxnRef: 'PM-123',
-      vnp_ResponseCode: '24',
-      vnp_TransactionStatus: '02',
-      vnp_TransactionNo: 'TX-1'
+      vnp_Amount: "10000000",
+      vnp_TxnRef: "PM-123",
+      vnp_ResponseCode: "24",
+      vnp_TransactionStatus: "02",
+      vnp_TransactionNo: "TX-1",
     };
     payload.vnp_SecureHash = paymentGatewayService.buildVnPaySignature(
       payload,
       process.env.VNPAY_HASH_SECRET
     );
-    const event = { status: 'received', save: jest.fn().mockResolvedValue() };
+    const event = { status: "received", save: jest.fn().mockResolvedValue() };
     const payment = {
-      status: 'completed',
-      paymentMethod: 'vnpay',
-      save: jest.fn().mockResolvedValue()
+      status: "completed",
+      paymentMethod: "vnpay",
+      amount: 100000,
+      save: jest.fn().mockResolvedValue(),
     };
     PaymentWebhookEvent.create.mockResolvedValue(event);
     Payment.findOne.mockResolvedValue(payment);
@@ -249,8 +305,8 @@ describe('Payment controller regressions', () => {
     const res = createResponse();
     await invoke(paymentController.paymentWebhook, req, res);
 
-    expect(payment.status).toBe('completed');
-    expect(event.status).toBe('processed');
-    expect(res.send).toHaveBeenCalledWith('OK');
+    expect(payment.status).toBe("completed");
+    expect(event.status).toBe("processed");
+    expect(res.send).toHaveBeenCalledWith("OK");
   });
 });

@@ -169,7 +169,8 @@ async function updateProductRating(productId) {
     const reviews = await Review.find({
       productId,
       isApproved: true,
-      isDeleted: false
+      isRejected: { $ne: true },
+      isDeleted: { $ne: true }
     });
     
     let avgRating = 0;
@@ -246,12 +247,18 @@ ReviewSchema.methods.rejectReview = async function(_adminId, reason) {
 };
 
 // Method to respond to a review (as admin/staff)
-ReviewSchema.methods.respondToReview = async function(adminId, comment) {
+ReviewSchema.methods.respondToReview = async function(adminId, comment, approve = false) {
   this.adminResponse = {
     comment,
     adminId,
     createdAt: new Date()
   };
+
+  if (approve) {
+    this.isApproved = true;
+    this.isRejected = false;
+    this.rejectionReason = '';
+  }
   
   return this.save();
 };

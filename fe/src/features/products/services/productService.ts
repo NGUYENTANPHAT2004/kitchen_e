@@ -1,16 +1,22 @@
-import { api, endpoints } from '../../../config/api_cli.config';
-import type { ProductFilters, ProductFormData } from '../interface/productCustomization';
+import { api, endpoints } from "../../../config/api_cli.config";
+import type {
+  ProductFilters,
+  ProductFormData,
+} from "../interface/productCustomization";
 
-export type { Product, ProductFilters, ProductFormData } from '../interface/productCustomization';
-
+export type {
+  Product,
+  ProductFilters,
+  ProductFormData,
+} from "../interface/productCustomization";
 
 export const productService = {
   // Get products with filters and pagination
   async getProducts(filters: ProductFilters = {}) {
     const params = new URLSearchParams();
-    
+
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
+      if (value !== undefined && value !== null && value !== "") {
         params.append(key, String(value));
       }
     });
@@ -28,12 +34,12 @@ export const productService = {
   // Create product
   async createProduct(data: ProductFormData) {
     const formData = new FormData();
-    
+
     // Add basic fields
     Object.entries(data).forEach(([key, value]) => {
-      if (key !== 'images' && key !== 'removeImages') {
+      if (key !== "images" && key !== "removeImages") {
         if (value !== undefined && value !== null) {
-          if (key === 'tags') {
+          if (key === "tags") {
             formData.append(key, JSON.stringify(value));
           } else {
             formData.append(key, String(value));
@@ -44,13 +50,13 @@ export const productService = {
 
     // Add images
     if (data.images) {
-      data.images.forEach(file => {
-        formData.append('images', file);
+      data.images.forEach((file) => {
+        formData.append("images", file);
       });
     }
 
     const response = await api.post(endpoints.products.base, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { "Content-Type": "multipart/form-data" },
     });
     return response.data;
   },
@@ -58,12 +64,12 @@ export const productService = {
   // Update product
   async updateProduct(id: string, data: ProductFormData) {
     const formData = new FormData();
-    
+
     // Add basic fields
     Object.entries(data).forEach(([key, value]) => {
-      if (key !== 'images' && key !== 'removeImages') {
+      if (key !== "images" && key !== "removeImages") {
         if (value !== undefined && value !== null) {
-          if (key === 'tags') {
+          if (key === "tags") {
             formData.append(key, JSON.stringify(value));
           } else {
             formData.append(key, String(value));
@@ -74,18 +80,18 @@ export const productService = {
 
     // Add new images
     if (data.images) {
-      data.images.forEach(file => {
-        formData.append('images', file);
+      data.images.forEach((file) => {
+        formData.append("images", file);
       });
     }
 
     // Add removed images
     if (data.removeImages && data.removeImages.length > 0) {
-      formData.append('removeImages', JSON.stringify(data.removeImages));
+      formData.append("removeImages", JSON.stringify(data.removeImages));
     }
 
     const response = await api.put(endpoints.products.byId(id), formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { "Content-Type": "multipart/form-data" },
     });
     return response.data;
   },
@@ -104,19 +110,25 @@ export const productService = {
 
   // Search products
   async searchProducts(query: string, limit: number = 10) {
-    const response = await api.get(`${endpoints.products.search}?query=${query}&limit=${limit}`);
+    const response = await api.get(
+      `${endpoints.products.search}?query=${query}&limit=${limit}`
+    );
     return response.data;
   },
 
   // Get featured products
   async getFeaturedProducts(limit: number = 8) {
-    const response = await api.get(`${endpoints.products.featured}?limit=${limit}`);
+    const response = await api.get(endpoints.products.base, {
+      params: { featured: true, limit, sort: "-createdAt" },
+    });
     return response.data;
   },
 
   // Get best-selling products (sorted by popularity + rating on the backend)
   async getBestSellingProducts(limit: number = 15) {
-    const response = await api.get(`${endpoints.products.bestSelling}?limit=${limit}`);
+    const response = await api.get(
+      `${endpoints.products.bestSelling}?limit=${limit}`
+    );
     const data = response.data?.data ?? response.data;
     return (data?.products ?? []) as Array<{
       _id: string;
@@ -127,6 +139,5 @@ export const productService = {
       averageRating?: number;
       popularity?: number;
     }>;
-  }
+  },
 };
-

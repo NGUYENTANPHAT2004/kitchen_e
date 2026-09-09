@@ -1,11 +1,11 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 import type {
   AuthState,
   LoginRequest,
   RegisterRequest,
   UpdateUserRequest,
   UpdatePasswordRequest,
-} from '../interfaces/auth-interfaces';
+} from "../interfaces/auth-interfaces";
 
 interface AuthContextProps {
   state: AuthState;
@@ -14,13 +14,22 @@ interface AuthContextProps {
   logout: () => Promise<void>;
   updateUser: (data: UpdateUserRequest) => Promise<void>;
   updatePassword: (data: UpdatePasswordRequest) => Promise<void>;
-  forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;
-  resetPassword: (token: string, password: string) => Promise<{ success: boolean; message: string }>;
-  verifyEmail: (token: string) => Promise<{ success: boolean; message: string }>;
+  forgotPassword: (
+    email: string
+  ) => Promise<{ success: boolean; message: string }>;
+  resetPassword: (
+    token: string,
+    password: string
+  ) => Promise<{ success: boolean; message: string }>;
+  verifyEmail: (
+    token: string
+  ) => Promise<{ success: boolean; message: string }>;
   resendVerification: () => Promise<{ success: boolean; message: string }>;
   clearError: () => void;
   refreshUser: () => Promise<void>;
-  loadUser: () => Promise<void>;
+  loadUser: (isRetry?: boolean, forceRefresh?: boolean) => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextProps | undefined>(undefined);
+export const AuthContext = createContext<AuthContextProps | undefined>(
+  undefined
+);

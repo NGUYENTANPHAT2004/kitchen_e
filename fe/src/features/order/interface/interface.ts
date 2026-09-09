@@ -1,17 +1,44 @@
 export interface OrderItem {
   _id: string;
-  productId: { name: string; images?: { url: string }[] } | string;
-  variantId?: { attributes?: { name: string; value: string }[] } | null;
+  productId:
+    | { _id?: string; name: string; images?: { url: string }[] }
+    | string
+    | null;
+  variantId?: {
+    _id?: string;
+    name?: string;
+    attributes?: { name: string; value: string }[];
+  } | null;
+  productSnapshot?: { name?: string; image?: string };
+  variantSnapshot?: { name?: string };
   quantity: number;
   price: number;
 }
 
 export interface Order {
   _id: string;
-  userId: { firstName?: string; lastName?: string; username?: string; email: string; phoneNumber?: string } | null;
+  userId: {
+    firstName?: string;
+    lastName?: string;
+    username?: string;
+    email: string;
+    phoneNumber?: string;
+  } | null;
   orderNumber: string;
   createdAt: string;
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  status:
+    | "pending"
+    | "processing"
+    | "shipped"
+    | "delivered"
+    | "cancelled"
+    | "refunded";
+  isPaid?: boolean;
+  subtotal?: number;
+  shippingCost?: number;
+  discount?: number;
+  trackingNumber?: string;
+  payments?: Array<{ _id: string; status: string; paymentMethod: string }>;
   totalAmount: number;
   items: OrderItem[];
   shippingAddress?: {
@@ -23,13 +50,18 @@ export interface Order {
     country?: string;
     phone: string;
   };
-  paymentStatus: 'paid' | 'unpaid' | 'refunded';
+  paymentStatus: "paid" | "unpaid" | "refunded";
   item: { quantity: number }[];
   paymentMethod: string;
 }
 export interface OrdersResponse {
   orders: Order[];
-  pagination: { currentPage: number; totalPages: number; totalItems: number; limit: number };
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    limit: number;
+  };
 }
 export interface ShippingForm {
   firstName: string;
@@ -43,8 +75,8 @@ export interface ShippingForm {
   zipCode: string;
   country: string;
   saveInfo: boolean;
-  shippingMethod: 'standard' | 'express';
-  paymentMethod: 'cod' | 'bank_transfer';
+  shippingMethod: "standard" | "express";
+  paymentMethod: "cod" | "bank_transfer";
   discountCode: string;
 }
 
@@ -72,15 +104,15 @@ export interface AdminOrderParams {
   page?: number;
   limit?: number;
   search?: string;
-  status?: Order['status'] | '';
-  paymentStatus?: Order['paymentStatus'] | '';
+  status?: Order["status"] | "";
+  paymentStatus?: Order["paymentStatus"] | "";
   startDate?: string;
   endDate?: string;
   sort?: string;
 }
 export interface AdminOrderFilters {
   search: string;
-  status: Order['status'] | '';
-  paymentStatus: Order['paymentStatus'] | '';
+  status: Order["status"] | "";
+  paymentStatus: Order["paymentStatus"] | "";
   dateRange: { start: string; end: string };
 }

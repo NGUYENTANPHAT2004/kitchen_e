@@ -18,6 +18,7 @@ import aiohttp
 import asyncio
 from app.config import settings
 from app.utils.db_connector import mongo_client
+from app.utils.product_image import product_image_url
 from bson import ObjectId
 import time
 from datetime import datetime
@@ -39,6 +40,7 @@ class ChatModel:
         if cls._instance is None:
             cls._instance = super(ChatModel, cls).__new__(cls)
             cls._instance.initialized = False
+            cls._instance.intent_runtime = None
             cls._instance.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if _TORCH_AVAILABLE else 'cpu'
         return cls._instance
     
@@ -48,19 +50,21 @@ class ChatModel:
             return
 
         try:
-            if _TORCH_AVAILABLE and AutoTokenizer is not None:
+            from app.services.intent_training import intent_training
+            self.intent_runtime = intent_training
+            if _TORCH_AVAILABLE and AutoTokenizer is not None and os.path.isfile(os.path.join(settings.PHOBERT_MODEL_PATH, "config.json")):
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     settings.PHOBERT_MODEL_PATH,
-                    use_auth_token=settings.HUGGINGFACE_API_KEY
+                    local_files_only=True
                 )
                 self.model = AutoModel.from_pretrained(
                     settings.PHOBERT_MODEL_PATH,
-                    use_auth_token=settings.HUGGINGFACE_API_KEY
+                    local_files_only=True
                 ).to(self.device)
             else:
                 self.tokenizer = None
                 self.model = None
-                logger.warning("torch/transformers not available — using rule-based fallback only")
+                logger.info("Chat uses the locally trained intent classifier; optional PhoBERT embeddings are not loaded")
 
             # Load intent patterns
             self.intent_patterns = await self._load_intent_patterns()
@@ -138,7 +142,8 @@ class ChatModel:
         products = await mongo_client.find_many(
             "products",
             {"isDeleted": {"$ne": True}},
-            projection={"name": 1, "description": 1, "basePrice": 1, "images": 1, "categoryId": 1}
+            projection={"name": 1, "description": 1, "basePrice": 1, "images": 1, "categoryId": 1, "stockQuantity": 1, "popularity": 1},
+            limit=5000
         )
         
         # Format product catalog for quick reference
@@ -149,8 +154,10 @@ class ChatModel:
                 "name": product["name"],
                 "description": product.get("description", ""),
                 "price": product.get("basePrice", 0),
-                "image": product.get("images", [])[0] if product.get("images") else None,
-                "category_id": str(product.get("categoryId")) if product.get("categoryId") else None
+                "image": product_image_url(product),
+                "category_id": str(product.get("categoryId")) if product.get("categoryId") else None,
+                "stock": product.get("stockQuantity", 0),
+                "popularity": product.get("popularity", 0)
             }
         
         return catalog
@@ -184,6 +191,11 @@ class ChatModel:
         """Detect the intent of a user message"""
         # Ensure model is initialized
         await self.initialize()
+
+        if self.intent_runtime:
+            result = await self.intent_runtime.classify(text)
+            if result:
+                return result["intent"]
         
         # Normalize text for pattern matching
         normalized_text = text.lower().strip()
@@ -325,24 +337,41 @@ class ChatModel:
     
     async def get_product_recommendations(self, query: str, user_id: Optional[str] = None, limit: int = 3) -> List[Dict[str, Any]]:
         """Get product recommendations based on query and optionally user history"""
-        # This would be more sophisticated in production
-        # For now, we'll do simple keyword matching
-        
-        query_lower = query.lower()
+        from app.models.intent_classifier import normalize_text
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        self.product_catalog = await self._load_product_catalog()
+        catalog = list(self.product_catalog.items())
+        if not catalog:
+            return []
+        query_lower = normalize_text(query)
+        terms = ["noi", "chao", "dao", "thot", "may xay", "lo vi song", "bep dien", "ly", "ray", "phoi", "xeng"]
+        requested = [term for term in terms if re.search(r"\b" + term + r"\b", query_lower)]
+        budget = re.search(r"(?:duoi|toi da|khong qua)\s*(\d[\d.,]*)\s*(trieu|tr|nghin|ngan|k|dong|vnd|d)?", query_lower)
+        maximum = None
+        if budget:
+            unit = budget.group(2) or "d"
+            amount = float(budget.group(1).replace(",", ".")) if unit in ("trieu", "tr") else float(budget.group(1).replace(".", "").replace(",", ""))
+            maximum = amount * {"trieu": 1000000, "tr": 1000000, "k": 1000, "nghin": 1000, "ngan": 1000}.get(unit, 1)
+        texts = [normalize_text(product["name"] + " " + product["name"] + " " + product["description"]) for _, product in catalog]
+        vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
+        vectors = vectorizer.fit_transform(texts)
+        scores = (vectors @ vectorizer.transform([query_lower]).T).toarray().ravel()
         matching_products = []
-        
-        for prod_id, product in self.product_catalog.items():
-            name = product["name"].lower()
-            description = product["description"].lower()
-            
-            # Simple keyword matching
-            if any(keyword in name or keyword in description for keyword in query_lower.split()):
+        for index, (prod_id, product) in enumerate(catalog):
+            name = normalize_text(product["name"])
+            if requested and not any(re.search(r"\b" + term + r"\b", name) for term in requested):
+                continue
+            if maximum is not None and product["price"] > maximum:
+                continue
+            if requested or maximum is not None or scores[index] > 0.05:
                 matching_products.append({
                     "id": prod_id,
                     "name": product["name"],
                     "price": product["price"],
                     "image": product["image"],
-                    "match_score": 1.0  # Simple score for now
+                    "match_score": float(scores[index]),
+                    "stock": product["stock"]
                 })
         
         # Sort by match score and limit results
@@ -351,8 +380,8 @@ class ChatModel:
     
     async def get_recipe_recommendations(self, product_id: Optional[str] = None, query: Optional[str] = None, limit: int = 3) -> List[Dict[str, Any]]:
         """Get recipe recommendations based on product or query"""
-        # Query recipes collection
-        query_dict = {}
+        # Only published recipes can be suggested to shoppers.
+        query_dict = {"isPublished": True, "isDeleted": {"$ne": True}}
         
         if product_id:
             # Find recipes linked to this product
@@ -365,18 +394,19 @@ class ChatModel:
                 recipe_ids = [link["recipeId"] for link in recipe_links]
                 query_dict["_id"] = {"$in": recipe_ids}
         
-        if query and not query_dict:
+        if query and "_id" not in query_dict:
             # Simple text search
             # In production, this would use a text index or more sophisticated matching
-            query_lower = query.lower()
-            recipes = await mongo_client.find_many("recipes", {})
+            from app.models.intent_classifier import normalize_text
+            query_lower = normalize_text(query)
+            recipes = await mongo_client.find_many("recipes", query_dict, limit=200)
             
             matching_recipes = []
             for recipe in recipes:
-                title = recipe["title"].lower()
-                description = recipe.get("description", "").lower()
+                title = normalize_text(recipe["title"])
+                description = normalize_text(recipe.get("description", ""))
                 
-                if query_lower in title or query_lower in description:
+                if any(word in title or word in description for word in query_lower.split() if len(word) > 2):
                     matching_recipes.append({
                         "id": str(recipe["_id"]),
                         "title": recipe["title"],
@@ -421,7 +451,7 @@ class ChatModel:
     async def generate_response(
         self,
         text: str,
-        history: List[Dict[str, str]] = [],
+        history: Optional[List[Dict[str, str]]] = None,
         language: str = "vi",
         user_id: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -430,34 +460,43 @@ class ChatModel:
         await self.initialize()
 
         # Detect intent
-        intent_type = await self.detect_intent(text)
+        decision = await self.intent_runtime.classify(text) if self.intent_runtime else None
+        intent_type = decision["intent"] if decision else await self.detect_intent(text)
+        definition = decision.get("definition") if decision else None
+        routing_intent = {"products": "product_inquiry", "recommendations": "product_recommendation", "orders": "order_status", "recipes": "cooking_tips"}.get(definition.get("handler"), intent_type) if definition else intent_type
 
         # Extract entities (NER + domain dictionary + regex) from the message.
         entities = await self.extract_entities(text)
 
         # Trim conversation history to the configured context window so very
         # long conversations don't blow past the model's useful context.
-        history = self._trim_history(history)
+        history = self._trim_history(history or [])
+        catalog_query = text
+        if history and any(word in text.lower() for word in ["loại đó", "loại này", "rẻ hơn", "dưới", "cái đó"]):
+            previous = next((entry["content"] for entry in reversed(history) if entry["role"] == "user"), "")
+            catalog_query = previous + " " + text
 
         # Get basic response based on intent
-        response = await self._generate_intent_response(text, intent_type, user_id)
+        response = definition["response"] if definition and definition.get("handler") == "response" else await self._generate_intent_response(catalog_query, routing_intent, user_id)
 
         # Add suggested actions based on intent
-        suggested_actions = await self._get_suggested_actions(intent_type)
+        suggested_actions = await self._get_suggested_actions(routing_intent)
 
         # Add product recommendations if relevant
         suggested_products = []
-        if intent_type in ["product_inquiry", "product_recommendation"]:
-            suggested_products = await self.get_product_recommendations(text, user_id)
+        if routing_intent in ["product_inquiry", "product_recommendation"]:
+            suggested_products = await self.get_product_recommendations(catalog_query, user_id)
 
         # Add recipe recommendations if relevant
         suggested_recipes = []
-        if intent_type in ["cooking_tips"]:
+        if routing_intent in ["cooking_tips"]:
             suggested_recipes = await self.get_recipe_recommendations(query=text)
 
         return {
             "response": response,
             "intent_type": intent_type,
+            "intent_confidence": decision["confidence"] if decision else None,
+            "model_version": decision["version"] if decision else None,
             "entities": entities,
             "suggested_actions": suggested_actions,
             "suggested_products": suggested_products,
@@ -496,15 +535,10 @@ class ChatModel:
                 return np.random.choice(self.responses["product_not_found"])
         
         elif intent_type == "order_status":
-            # Check if query contains order ID
-            order_id_match = re.search(r'\b[A-Za-z0-9]{8,}\b', text)
-            
-            if order_id_match and user_id:
-                order_id = order_id_match.group(0)
-                # In production, would query the order database
-                return f"Đơn hàng {order_id} của bạn đang trong quá trình vận chuyển và dự kiến sẽ đến trong 2-3 ngày tới."
-            else:
-                return np.random.choice(self.responses["order_status_query"])
+            return (
+                "Bạn mở mục Đơn hàng của tôi sau khi đăng nhập để xem trạng thái "
+                "được cập nhật của đơn hàng. Trợ lý hiện chưa tra cứu đơn hàng trong cuộc trò chuyện."
+            )
         
         elif intent_type == "cooking_tips":
             # Extract dish or ingredient from query
@@ -530,51 +564,16 @@ class ChatModel:
     
     async def _get_suggested_actions(self, intent_type: str) -> List[Dict[str, str]]:
         """Get suggested actions based on intent type"""
-        suggestions = []
-        
+        catalog = {"text": "Khám phá sản phẩm", "action": "view_new_products"}
+        recipes = {"text": "Góc vào bếp", "action": "find_recipes"}
+        support = {"text": "Liên hệ hỗ trợ", "action": "contact_support"}
+        if intent_type == "order_status":
+            return [{"text": "Đơn hàng của tôi", "action": "track_order"}, support]
+        if intent_type == "cooking_tips":
+            return [recipes, catalog]
         if intent_type == "greeting":
-            suggestions = [
-                {"text": "Xem sản phẩm mới", "action": "view_new_products"},
-                {"text": "Tìm công thức nấu ăn", "action": "find_recipes"},
-                {"text": "Khuyến mãi hiện tại", "action": "view_promotions"}
-            ]
-        
-        elif intent_type == "product_inquiry":
-            suggestions = [
-                {"text": "So sánh sản phẩm", "action": "compare_products"},
-                {"text": "Xem đánh giá", "action": "view_reviews"},
-                {"text": "Thêm vào giỏ hàng", "action": "add_to_cart"}
-            ]
-        
-        elif intent_type == "order_status":
-            suggestions = [
-                {"text": "Theo dõi đơn hàng", "action": "track_order"},
-                {"text": "Liên hệ CSKH", "action": "contact_support"},
-                {"text": "Hủy đơn hàng", "action": "cancel_order"}
-            ]
-        
-        elif intent_type == "cooking_tips":
-            suggestions = [
-                {"text": "Xem video hướng dẫn", "action": "view_recipe_video"},
-                {"text": "Mua nguyên liệu", "action": "buy_ingredients"},
-                {"text": "Lưu công thức", "action": "save_recipe"}
-            ]
-        
-        elif intent_type == "product_recommendation":
-            suggestions = [
-                {"text": "Xem chi tiết", "action": "view_product_details"},
-                {"text": "So sánh sản phẩm", "action": "compare_products"},
-                {"text": "Xem sản phẩm tương tự", "action": "view_similar_products"}
-            ]
-        
-        else:  # general or unknown
-            suggestions = [
-                {"text": "Xem sản phẩm bán chạy", "action": "view_bestsellers"},
-                {"text": "Khuyến mãi", "action": "view_promotions"},
-                {"text": "Liên hệ hỗ trợ", "action": "contact_support"}
-            ]
-        
-        return suggestions
+            return [catalog, recipes]
+        return [catalog, support]
     
     async def get_suggestions(
         self, 
@@ -588,7 +587,7 @@ class ChatModel:
         if user_id:
             # Get user's frequent queries
             user_logs = await mongo_client.find_many(
-                "aiAssistantLogs",
+                "aiassistantlogs",
                 {"userId": ObjectId(user_id)},
                 sort=[("createdAt", -1)],
                 limit=10

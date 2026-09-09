@@ -31,12 +31,11 @@ class AsyncMongoClient:
             # Ping the server to check connection
             await self.client.admin.command('ping')
             
-            # Extract database name from URI
-            db_name = settings.MONGODB_URI.split("/")[-1]
-            self.db = self.client[db_name]
+            # Let the driver parse the database, including URI query options.
+            self.db = self.client.get_default_database()
             
             self.initialized = True
-            logger.info(f"Connected to MongoDB database: {db_name}")
+            logger.info(f"Connected to MongoDB database: {self.db.name}")
             
         except (ConnectionFailure, ServerSelectionTimeoutError) as e:
             logger.error(f"Failed to connect to MongoDB: {str(e)}")
@@ -44,8 +43,10 @@ class AsyncMongoClient:
     
     async def close(self):
         """Close the MongoDB connection"""
-        if self.client:
+        if self.client is not None:
             self.client.close()
+            self.client = None
+            self.db = None
             self.initialized = False
             logger.info("MongoDB connection closed")
     

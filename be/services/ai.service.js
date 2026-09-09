@@ -13,7 +13,8 @@ class AIService {
       timeout: 30000, // 30 seconds
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'X-AI-Service-Key': process.env.AI_SERVICE_KEY || ''
       }
     });
   }
@@ -243,7 +244,7 @@ class AIService {
       // The request was made and the server responded with a status code
       // that falls out of the range of 2xx
       const errorData = error.response.data;
-      const errorMessage = errorData.error?.message || 'Unknown API error';
+      const errorMessage = errorData.error?.message || (typeof errorData.detail === 'string' ? errorData.detail : 'Dịch vụ AI chưa xử lý được yêu cầu.');
       const errorCode = errorData.error?.code || 'unknown_error';
       
       const apiError = new Error(errorMessage);

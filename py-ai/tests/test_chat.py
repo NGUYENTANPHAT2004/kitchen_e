@@ -10,7 +10,9 @@ from fastapi import FastAPI
 @pytest.fixture(scope="module")
 def app():
     from app.api.chat import router
+    from app.utils.service_auth import require_service_key
     _app = FastAPI()
+    _app.dependency_overrides[require_service_key] = lambda: None
     _app.include_router(router, prefix="/chat")
     return _app
 

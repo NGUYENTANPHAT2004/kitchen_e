@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 
 export interface CartItem {
   id: string;
@@ -17,7 +17,10 @@ export interface CartContextValue {
   items: CartItem[];
   totalItems: number;
   subtotal: number;
-  addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void;
+  isSyncing: boolean;
+  syncError: string | null;
+  refreshCart: () => Promise<void>;
+  addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;

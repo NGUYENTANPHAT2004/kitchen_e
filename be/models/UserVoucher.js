@@ -1,5 +1,6 @@
 // models/UserVoucher.js
 const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
 const UserVoucherSchema = new mongoose.Schema(
   {
@@ -99,5 +100,7 @@ UserVoucherSchema.methods.markAsUsed = async function(orderId) {
 UserVoucherSchema.index({ userId: 1, voucherId: 1 }, { unique: true });
 UserVoucherSchema.index({ voucherId: 1 });
 UserVoucherSchema.index({ userId: 1, isUsed: 1 });
+
+UserVoucherSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('UserVoucher', UserVoucherSchema);

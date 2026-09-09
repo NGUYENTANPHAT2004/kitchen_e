@@ -1,55 +1,65 @@
-jest.mock('../models/Review', () => ({
+jest.mock("../models/Review", () => ({
   findOne: jest.fn(),
   findById: jest.fn(),
   findByIdAndUpdate: jest.fn(),
-  create: jest.fn()
+  create: jest.fn(),
 }));
 
-jest.mock('../models/Product', () => ({ findById: jest.fn() }));
-jest.mock('../models/ProductVariant', () => ({ findById: jest.fn() }));
-jest.mock('../models/Order', () => ({ find: jest.fn() }));
-jest.mock('../models/OrderItem', () => ({ findOne: jest.fn() }));
+jest.mock("../models/Product", () => ({ findById: jest.fn() }));
+jest.mock("../models/ProductVariant", () => ({ findById: jest.fn() }));
+jest.mock("../models/Order", () => ({ find: jest.fn() }));
+jest.mock("../models/OrderItem", () => ({ findOne: jest.fn() }));
 
-const Review = require('../models/Review');
-const Product = require('../models/Product');
-const ProductVariant = require('../models/ProductVariant');
-const Order = require('../models/Order');
-const OrderItem = require('../models/OrderItem');
-const reviewController = require('../controllers/review.controller');
+const Review = require("../models/Review");
+const Product = require("../models/Product");
+const ProductVariant = require("../models/ProductVariant");
+const Order = require("../models/Order");
+const OrderItem = require("../models/OrderItem");
+const reviewController = require("../controllers/review.controller");
 
 const createResponse = () => ({
   status: jest.fn().mockReturnThis(),
-  json: jest.fn().mockReturnThis()
+  json: jest.fn().mockReturnThis(),
 });
 
-describe('Review regressions', () => {
+describe("Review regressions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test('verifies a variant purchase through delivered OrderItem records', async () => {
-    Product.findById.mockResolvedValue({ _id: 'product-1' });
+  test("verifies a variant purchase through delivered OrderItem records", async () => {
+    Product.findById.mockResolvedValue({ _id: "product-1" });
     ProductVariant.findById.mockResolvedValue({
-      _id: 'variant-1',
-      productId: { toString: () => 'product-1' }
+      _id: "variant-1",
+      productId: { toString: () => "product-1" },
     });
     Review.findOne.mockResolvedValue(null);
 
-    const selectDeliveredOrders = jest.fn().mockResolvedValue([{ _id: 'order-1' }]);
+    const selectDeliveredOrders = jest
+      .fn()
+      .mockResolvedValue([{ _id: "order-1" }]);
     Order.find.mockReturnValue({ select: selectDeliveredOrders });
 
-    const selectPurchasedItem = jest.fn().mockResolvedValue({ orderId: 'order-1' });
+    const selectPurchasedItem = jest
+      .fn()
+      .mockResolvedValue({ orderId: "order-1" });
     OrderItem.findOne.mockReturnValue({ select: selectPurchasedItem });
-    Review.create.mockImplementation(async (data) => ({ _id: 'review-1', ...data }));
+    Review.create.mockImplementation(async (data) => ({
+      _id: "review-1",
+      ...data,
+    }));
 
     const req = {
-      user: { id: 'user-1', role: 'user' },
+      user: { id: "user-1", role: "user" },
       body: {
-        productId: 'product-1',
-        productVariantId: 'variant-1',
+        productId: "product-1",
+        productVariantId: "variant-1",
         rating: 5,
-        comment: 'Great product'
-      }
+        comment: "Great product",
+        isApproved: true,
+        reportCount: 100,
+        adminResponse: { comment: "forged" },
+      },
     };
     const res = createResponse();
     const next = jest.fn();
@@ -58,42 +68,47 @@ describe('Review regressions', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(Order.find).toHaveBeenCalledWith({
-      userId: 'user-1',
-      status: 'delivered'
+      userId: "user-1",
+      status: "delivered",
     });
     expect(OrderItem.findOne).toHaveBeenCalledWith({
-      orderId: { $in: ['order-1'] },
-      productId: 'product-1',
-      variantId: 'variant-1'
+      orderId: { $in: ["order-1"] },
+      productId: "product-1",
+      variantId: "variant-1",
     });
-    expect(Review.create).toHaveBeenCalledWith(expect.objectContaining({
-      isVerifiedPurchase: true,
-      orderId: 'order-1'
-    }));
+    expect(Review.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isVerifiedPurchase: true,
+        isApproved: false,
+        orderId: "order-1",
+      })
+    );
+    expect(Review.create.mock.calls[0][0]).not.toHaveProperty("adminResponse");
+    expect(Review.create.mock.calls[0][0]).not.toHaveProperty("reportCount");
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  test('does not allow review owners to update protected commerce fields', async () => {
+  test("does not allow review owners to update protected commerce fields", async () => {
     Review.findById.mockResolvedValue({
-      userId: { toString: () => 'user-1' }
+      userId: { toString: () => "user-1" },
     });
-    Review.findByIdAndUpdate.mockResolvedValue({ _id: 'review-1', rating: 4 });
+    Review.findByIdAndUpdate.mockResolvedValue({ _id: "review-1", rating: 4 });
 
     const req = {
-      params: { id: 'review-1' },
-      user: { id: 'user-1', role: 'user' },
+      params: { id: "review-1" },
+      user: { id: "user-1", role: "user" },
       body: {
         rating: 4,
-        comment: 'Updated',
-        userId: 'other-user',
-        productId: 'other-product',
-        productVariantId: 'other-variant',
-        orderId: 'other-order',
+        comment: "Updated",
+        userId: "other-user",
+        productId: "other-product",
+        productVariantId: "other-variant",
+        orderId: "other-order",
         isVerifiedPurchase: true,
         isApproved: true,
         isRejected: true,
-        rejectionReason: 'tampered'
-      }
+        rejectionReason: "tampered",
+      },
     };
     const res = createResponse();
     const next = jest.fn();
@@ -102,9 +117,9 @@ describe('Review regressions', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(Review.findByIdAndUpdate).toHaveBeenCalledWith(
-      'review-1',
-      { rating: 4, comment: 'Updated' },
-      { new: true, runValidators: true }
+      "review-1",
+      { rating: 4, comment: "Updated", isApproved: false, isRejected: false },
+      { new: true, runValidators: true, includeUnapproved: true }
     );
   });
 });

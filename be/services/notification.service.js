@@ -1,5 +1,6 @@
 // services/notification.service.js
 const Notification = require('../models/Notification');
+const { unexpiredNotifications } = require('../utils/notification-query');
 const socketService = require('./socket.service');
 
 /**
@@ -465,10 +466,7 @@ class NotificationService {
         userId,
         isRead: false,
         isDismissed: false,
-        $or: [
-          { expiresAt: { $exists: false } },
-          { expiresAt: { $gt: new Date() } }
-        ]
+        ...unexpiredNotifications()
       }).countDocuments();
       
       return notifications;

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import {
   Bell, Search, Trash2, Eye, CheckCircle,
-  ChevronLeft, ChevronRight, Calendar, Info
+  ChevronLeft, ChevronRight, Calendar
 } from 'lucide-react';
 import { useNotifications, useDeleteNotification, useMarkNotificationRead } from '../hooks/useNotifications';
 import type { AppNotification, NotificationType, NotificationPriority } from '../interface/interface';
+import RequestState from '../../../components/shared/RequestState';
 
 const TYPE_LABELS: Record<NotificationType, string> = {
   order_status: 'Đơn hàng',
@@ -50,9 +51,10 @@ const NotificationManagement: React.FC = () => {
   const [filterRead, setFilterRead] = useState<'all' | 'read' | 'unread'>('all');
   const [currentNotification, setCurrentNotification] = useState<AppNotification | null>(null);
 
-  const { data, isLoading, isError, page, setPage, limit } = useNotifications({
+  const { data, isLoading, isError, refetch, page, setPage, limit } = useNotifications({
     type: filterType || undefined,
     isRead: filterRead === 'all' ? undefined : filterRead === 'read',
+    search: searchTerm.trim() || undefined,
   });
 
   const deleteMutation = useDeleteNotification();
@@ -62,12 +64,6 @@ const NotificationManagement: React.FC = () => {
   const pagination = data?.pagination;
   const totalPages = pagination?.totalPages ?? 0;
   const totalItems = pagination?.total ?? 0;
-
-  // Client-side search on the current page (backend has no text search for notifications)
-  const visibleNotifications = notifications.filter((n) => {
-    const q = searchTerm.toLowerCase();
-    return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
-  });
 
   const clearFilters = () => {
     setSearchTerm('');
@@ -85,7 +81,11 @@ const NotificationManagement: React.FC = () => {
   const handleView = (notification: AppNotification) => {
     setCurrentNotification(notification);
     if (!notification.isRead) {
-      markReadMutation.mutate(notification._id);
+      markReadMutation.mutate(notification._id, {
+        onSuccess: (updated) => setCurrentNotification((current) =>
+          current?._id === updated._id ? updated : current
+        ),
+      });
     }
   };
 
@@ -98,34 +98,28 @@ const NotificationManagement: React.FC = () => {
         </h1>
       </div>
 
-      {/* Backend limitation notice */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-        <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-blue-800">
-        thông báo hiện chỉ trả về thông báo của người dùng đang đăng nhập
-          (<span className="font-medium">GET /notifications</span>). Việc tạo chiến dịch gửi hàng loạt và
-          các chỉ số như tỷ lệ mở/click cần thêm endpoint quản trị ở backend.
-        </div>
-      </div>
+      <p className="text-sm text-gray-500">Theo dõi cập nhật về đơn hàng, tài khoản và ưu đãi dành cho bạn.</p>
 
       {/* Filters and Search */}
       <div className="bg-white shadow-sm rounded-lg p-6 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center gap-4">
-          <div className="relative flex-1">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="relative min-w-0 flex-1 basis-80">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-5 w-5 text-gray-400" />
             </div>
             <input
               type="text"
               placeholder="Tìm kiếm theo tiêu đề, nội dung..."
+              aria-label="Tìm thông báo"
               className="pl-10 w-full py-2 px-4 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
             />
           </div>
 
           <div className="flex flex-wrap gap-2">
             <select
+              aria-label="Loại thông báo"
               className="appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-w-[150px]"
               value={filterType}
               onChange={(e) => { setFilterType(e.target.value as NotificationType | ''); setPage(1); }}
@@ -137,6 +131,7 @@ const NotificationManagement: React.FC = () => {
             </select>
 
             <select
+              aria-label="Trạng thái thông báo"
               className="appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-w-[150px]"
               value={filterRead}
               onChange={(e) => { setFilterRead(e.target.value as 'all' | 'read' | 'unread'); setPage(1); }}
@@ -171,13 +166,13 @@ const NotificationManagement: React.FC = () => {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-500">Đang tải dữ liệu...</td></tr>
+              <tr><td colSpan={6}><RequestState loading /></td></tr>
             ) : isError ? (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-red-500">Không thể tải thông báo. Vui lòng thử lại.</td></tr>
-            ) : visibleNotifications.length === 0 ? (
+              <tr><td colSpan={6}><RequestState error retry={() => refetch()} /></td></tr>
+            ) : notifications.length === 0 ? (
               <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-500">Không có thông báo nào.</td></tr>
             ) : (
-              visibleNotifications.map((notification) => (
+              notifications.map((notification) => (
                 <tr key={notification._id} className={`hover:bg-gray-50 ${!notification.isRead ? 'bg-indigo-50/40' : ''}`}>
                   <td className="px-3 py-4">
                     <div className="text-sm font-medium text-gray-900">{notification.title}</div>
@@ -241,8 +236,8 @@ const NotificationManagement: React.FC = () => {
       </div>
 
       {/* Pagination */}
-      {totalPages > 0 && (
-        <div className="flex items-center justify-between">
+      {!isError && totalItems > 0 && totalPages > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-gray-700">
             Trang <span className="font-medium">{page}</span> / <span className="font-medium">{totalPages}</span>
             {' '}— tổng <span className="font-medium">{totalItems}</span> thông báo
@@ -250,6 +245,7 @@ const NotificationManagement: React.FC = () => {
           </div>
           <div className="flex items-center space-x-2">
             <button
+              aria-label="Trang trước"
               onClick={() => setPage(Math.max(1, page - 1))}
               disabled={page === 1}
               className="px-3 py-2 border rounded-md text-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -280,6 +276,7 @@ const NotificationManagement: React.FC = () => {
               );
             })}
             <button
+              aria-label="Trang sau"
               onClick={() => setPage(Math.min(totalPages, page + 1))}
               disabled={page === totalPages}
               className="px-3 py-2 border rounded-md text-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -292,7 +289,7 @@ const NotificationManagement: React.FC = () => {
 
       {/* Notification Detail Modal */}
       {currentNotification && (
-        <div className="fixed z-10 inset-0 overflow-y-auto">
+        <div className="fixed z-50 inset-0 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="notification-detail-title">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div className="fixed inset-0 transition-opacity" aria-hidden="true">
               <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
@@ -301,7 +298,7 @@ const NotificationManagement: React.FC = () => {
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="w-full">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900 flex items-center gap-2">
+                  <h3 id="notification-detail-title" className="text-lg leading-6 font-medium text-gray-900 flex items-center gap-2">
                     Chi tiết thông báo
                     <PriorityBadge priority={currentNotification.priority} />
                   </h3>

@@ -23,20 +23,12 @@ const AIAssistantLogSchema = new mongoose.Schema(
     },
     intentType: {
       type: String,
-      enum: [
-        'greeting', 
-        'product_inquiry', 
-        'order_status', 
-        'cooking_tips', 
-        'product_recommendation',
-        'general',
-        'error'
-      ],
+      match: /^[a-z][a-z0-9_]{1,59}$/,
       default: 'general'
     },
     querySource: {
       type: String,
-      enum: ['text', 'voice', 'suggestion'],
+      enum: ['text', 'voice', 'suggestion', 'api'],
       default: 'text'
     },
     deviceInfo: {
@@ -47,6 +39,11 @@ const AIAssistantLogSchema = new mongoose.Schema(
       type: Number,
       description: 'Time taken to generate response in milliseconds'
     },
+    modelVersion: { type: String, default: null },
+    intentConfidence: { type: Number, min: 0, max: 1, default: null },
+    suggestedProducts: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    suggestedRecipes: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    suggestedActions: { type: [mongoose.Schema.Types.Mixed], default: [] },
     feedback: {
       isHelpful: Boolean,
       comments: String,

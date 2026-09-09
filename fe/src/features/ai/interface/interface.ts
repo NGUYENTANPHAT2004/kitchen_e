@@ -41,6 +41,11 @@ export interface AIChatHistoryItem {
   query_source: AIQuerySource;
   created_at: string;
   response_time?: number;
+  model_version?: string | null;
+  intent_confidence?: number | null;
+  suggested_products?: { id: string; name: string; price: number; image?: string | null }[];
+  suggested_recipes?: { id: string; title: string }[];
+  suggested_actions?: { text: string; action: string }[];
   feedback?: {
     isHelpful: boolean;
     comments?: string;

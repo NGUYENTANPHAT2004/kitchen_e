@@ -1,21 +1,37 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import logging
+import os
 import time
 from app.utils.logging import setup_logging
 from app.utils.error_handler import handle_exceptions
-from app.api import chat, face_auth, product_recommendation, recipe_recommendation, speech, user_behavior
+from app.api import chat, face_auth, product_recommendation, recipe_recommendation, speech, user_behavior, training
+from app.services.intent_training import intent_training
 from app.config import settings
+from app.utils.db_connector import mongo_client
 
 # Setup logging
-setup_logging()
+setup_logging(log_file_path=os.getenv("KITCHEN_AI_LOG_PATH"))
 logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        await mongo_client.connect()
+        await intent_training.initialize()
+        await chat.chat_model.initialize()
+        yield
+    finally:
+        await intent_training.close()
+        await mongo_client.close()
 
 app = FastAPI(
     title="Kitchen E-commerce AI Service",
     description="AI microservice for kitchen e-commerce platform",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Add CORS middleware
@@ -44,6 +60,7 @@ async def add_process_time_header(request, call_next):
 
 # Include routers from each API module
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
+app.include_router(training.router, prefix="/api/training", tags=["Intent training"])
 app.include_router(face_auth.router, prefix="/api/face-auth", tags=["Face Authentication"])
 app.include_router(product_recommendation.router, prefix="/api/recommendations", tags=["Product Recommendations"])
 app.include_router(recipe_recommendation.router, prefix="/api/recipes", tags=["Recipe Recommendations"])
@@ -53,7 +70,28 @@ app.include_router(user_behavior.router, prefix="/api/user-behavior", tags=["Use
 # Health check endpoint
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {"status": "healthy", "service": "kitchen-ai-service"}
+    try:
+        if not mongo_client.initialized or not chat.chat_model.initialized:
+            raise RuntimeError("Service is still initializing")
+        await mongo_client.db.command("ping")
+    except Exception:
+        return JSONResponse(status_code=503, content={
+            "status": "unavailable", "service": "kitchen-ai-service",
+            "database": "disconnected",
+        })
+    return {
+        "status": "healthy",
+        "service": "kitchen-ai-service",
+        "database": "connected",
+        "database_name": mongo_client.db.name,
+        "chat": {
+            "ready": True,
+            "mode": "trained-intent" if intent_training.artifact else "catalog-rules",
+            "model_version": intent_training.active_id,
+            "product_count": len(chat.chat_model.product_catalog),
+            "embeddings_available": chat.chat_model.model is not None,
+        },
+    }
 
 if __name__ == "__main__":
     import uvicorn

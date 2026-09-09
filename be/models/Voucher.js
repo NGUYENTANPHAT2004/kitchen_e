@@ -1,5 +1,6 @@
 // models/Voucher.js
 const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
 const VoucherSchema = new mongoose.Schema(
   {
@@ -118,5 +119,7 @@ VoucherSchema.methods.incrementUsage = async function() {
 VoucherSchema.index({ code: 1 });
 VoucherSchema.index({ startDate: 1, endDate: 1 });
 VoucherSchema.index({ isActive: 1, isDeleted: 1 });
+
+VoucherSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('Voucher', VoucherSchema);
